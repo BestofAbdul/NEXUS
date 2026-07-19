@@ -1,0 +1,19 @@
+node_modules/
+.pnpm-store/
+.next/
+out/
+dist/
+coverage/
+*.tsbuildinfo
+.env
+.env.local
+.env.*.local
+*.db
+*.db-journal
+*.sqlite
+*.sqlite-journal
+.DS_Store
+Thumbs.db
+
+# Preserved pre-NEXUS prototype; it is not part of this repository.
+agenthub/

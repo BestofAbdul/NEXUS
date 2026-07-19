@@ -1,0 +1,27 @@
+{
+  "name": "@nexus/mission-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "db:generate": "prisma generate --schema prisma/schema.prisma",
+    "db:push": "prisma db push --schema prisma/schema.prisma",
+    "postinstall": "prisma generate --schema prisma/schema.prisma",
+    "test": "tsx --test test/**/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "verify": "pnpm db:push && tsx scripts/verify-mission.ts"
+  },
+  "dependencies": {
+    "@nexus/shared": "workspace:*",
+    "@prisma/client": "6.19.1"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.25",
+    "prisma": "6.19.1",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3"
+  }
+}
