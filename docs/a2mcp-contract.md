@@ -16,6 +16,16 @@ manifest, authentication, and transport fields pending official verification.
 
 An invocation creates a new mission or continues an existing mission.
 
+The primary interoperable transport is an MCP Streamable HTTP endpoint:
+
+```http
+POST /api/mcp
+```
+
+It exposes the `nexus_mission` tool with the request fields below. The REST route
+remains a thin compatibility adapter and delegates to the same application
+service:
+
 ```http
 POST /api/a2mcp/mission
 Content-Type: application/json

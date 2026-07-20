@@ -10,6 +10,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: 1.29.0
+        version: 1.29.0(zod@4.4.3)
       '@nexus/agents':
         specifier: workspace:*
         version: link:../../packages/agents
@@ -34,6 +37,9 @@ importers:
       react-dom:
         specifier: 19.2.4
         version: 19.2.4(react@19.2.4)
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
     devDependencies:
       '@tailwindcss/postcss':
         specifier: ^4.1.18

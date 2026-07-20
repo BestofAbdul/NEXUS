@@ -198,3 +198,43 @@ quote bookings or invoke payment services.
 hard boundary against payments, bookings, wallets, and financial accounts.
 Every response labels the total as informational and subject to human
 verification.
+
+## 2026-07-20 - OKX A2MCP registration and public transport correction
+
+**Sources rechecked:**
+
+- OKX.AI A2MCP Guide:
+  `https://web3.okx.com/onchainos/dev-docs/okxai/howtomcp`
+- OKX.AI ASP Registration:
+  `https://web3.okx.com/onchainos/dev-docs/okxai/registerasp`
+
+**Registration workflow:** ASP registration is conversational through an agent
+after installing OKX's OnchainOS Skills with
+`npx skills add okx/onchainos-skills --yes -g` and authenticating an Agentic
+Wallet. NEXUS will not author or publish a speculative manifest file.
+
+**Service pricing:** Register NEXUS as a free A2MCP service. It returns results
+directly and does not use x402 or the OKX Payment SDK. This preserves the
+no-payment, no-booking, and no-financial-account boundary.
+
+**Public MCP boundary:** Add an outward-facing MCP server using the official MCP
+TypeScript SDK and Streamable HTTP transport. It exposes mission
+creation/resumption as a callable tool and delegates to the same Mission Engine
+and Mission Orchestrator used by the REST adapter. No mission business logic is
+duplicated in the transport layer.
+
+**Deployment gate:** Marketplace registration requires a publicly reachable
+HTTPS endpoint on a real domain. No hosting account, domain, or deployment will
+be provisioned without explicit owner approval because those steps may involve
+account access or cost. Railway with a persistent volume is the recommended
+first hosting option for the current Next.js plus Prisma/SQLite scope. Vercel's
+runtime filesystem is ephemeral, so Vercel is suitable only after moving mission
+persistence to an external managed database.
+
+**Review timeline:** OKX sends the review result by email. The current official
+registration page says review is normally completed within 24 hours; NEXUS will
+reserve 1-2 business days in the submission schedule as an operational buffer.
+
+**Deferred real-world actions:** Do not install OnchainOS Skills, authenticate an
+Agentic Wallet, register/list the ASP, provision hosting, or configure a domain
+until the owner explicitly approves those actions.

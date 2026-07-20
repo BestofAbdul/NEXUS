@@ -122,6 +122,7 @@ Phase 4 is complete:
 - informational cost line items and total returned through A2MCP
 - persisted, idempotent orchestration notifications
 - verified free OKX.AI A2MCP behavior with direct HTTP `200`
+- outward-facing MCP Streamable HTTP `nexus_mission` tool
 - documented marketplace identity, validation, review, and activation gates
 
 ## Local Development

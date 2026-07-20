@@ -6,11 +6,10 @@ import {
   type MissionType,
   type SetupAnswers,
 } from "@nexus/shared";
-import type { MissionOrchestrationResult } from "@nexus/agents";
 import {
-  missionOrchestrator,
-  missionService,
-} from "@/lib/mission-service";
+  A2MCPMissionError,
+  invokeA2MCPMission,
+} from "@/lib/a2mcp-mission";
 
 const missionTypeSet = new Set<string>(missionTypes);
 
@@ -30,12 +29,12 @@ export async function POST(
   }
 
   try {
-    if (parsedRequest.value.missionId) {
-      return resumeMission(parsedRequest.value);
+    return NextResponse.json(await invokeA2MCPMission(parsedRequest.value));
+  } catch (error) {
+    if (error instanceof A2MCPMissionError) {
+      return errorResponse(error.code, error.message, error.status);
     }
 
-    return createMission(parsedRequest.value);
-  } catch (error) {
     console.error("A2MCP mission invocation failed", error);
     return errorResponse(
       "MISSION_INVOCATION_FAILED",
@@ -43,82 +42,6 @@ export async function POST(
       500,
     );
   }
-}
-
-async function createMission(
-  request: ValidMissionRequest,
-): Promise<NextResponse<A2MCPMissionResponse>> {
-  const draft = await missionService.createMission({
-    title: titleFromGoal(request.goal),
-    type: request.missionType ?? "CUSTOM",
-    goal: request.goal,
-    setupAnswers: request.context,
-  });
-  const mission = await missionService.transitionMission(draft.id, "ACTIVE");
-  const orchestration = await missionOrchestrator.run(mission);
-
-  return NextResponse.json(toResponse(orchestration), { status: 200 });
-}
-
-async function resumeMission(
-  request: ValidMissionRequest,
-): Promise<NextResponse<A2MCPMissionResponse | ErrorResponse>> {
-  const existing = await missionService.getMission(request.missionId!);
-  if (!existing) {
-    return errorResponse(
-      "MISSION_NOT_FOUND",
-      `Mission not found: ${request.missionId}`,
-      404,
-    );
-  }
-
-  const mission =
-    existing.status === "DRAFT"
-      ? await missionService.transitionMission(existing.id, "ACTIVE")
-      : existing;
-  const orchestration = await missionOrchestrator.run(mission);
-
-  return NextResponse.json(toResponse(orchestration));
-}
-
-function toResponse(
-  orchestration: MissionOrchestrationResult,
-): A2MCPMissionResponse {
-  const { mission } = orchestration;
-
-  return {
-    accepted: true,
-    missionId: mission.id,
-    status: mission.status,
-    progress: mission.progress,
-    currentActivity: orchestration.currentActivity,
-    pendingQuestions: orchestration.pendingQuestions,
-    results: mission.researchResults.map((result) => ({
-      ...result,
-      createdAt: result.createdAt.toISOString(),
-    })),
-    recommendations: mission.recommendations.map((recommendation) => ({
-      ...recommendation,
-      createdAt: recommendation.createdAt.toISOString(),
-    })),
-    costBreakdown: {
-      currency: mission.costEstimates[0]?.currency ?? "USD",
-      lineItems: mission.costEstimates.map((estimate) => ({
-        ...estimate,
-        createdAt: estimate.createdAt.toISOString(),
-      })),
-      total: mission.costEstimates.reduce(
-        (total, estimate) => total + estimate.amount,
-        0,
-      ),
-      disclaimer:
-        "Informational estimate only. NEXUS never pays, books, or accesses financial accounts.",
-    },
-    notifications: mission.notifications.map((notification) => ({
-      ...notification,
-      createdAt: notification.createdAt.toISOString(),
-    })),
-  };
 }
 
 interface ValidMissionRequest extends A2MCPMissionRequest {
@@ -202,10 +125,6 @@ async function parseRequest(request: Request): Promise<ParseResult> {
       context: body.context as SetupAnswers | undefined,
     },
   };
-}
-
-function titleFromGoal(goal: string): string {
-  return goal.length <= 80 ? goal : `${goal.slice(0, 77)}...`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
