@@ -10,6 +10,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@nexus/mcp-adapters": "workspace:*",
+    "@nexus/mission-engine": "workspace:*",
     "@nexus/shared": "workspace:*"
   },
   "devDependencies": {

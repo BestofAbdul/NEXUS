@@ -11,6 +11,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@nexus/agents": "workspace:*",
+    "@nexus/mcp-adapters": "workspace:*",
     "@nexus/mission-engine": "workspace:*",
     "@nexus/shared": "workspace:*",
     "@prisma/client": "6.19.1",

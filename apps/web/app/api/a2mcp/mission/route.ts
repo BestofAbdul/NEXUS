@@ -3,11 +3,14 @@ import {
   missionTypes,
   type A2MCPMissionRequest,
   type A2MCPMissionResponse,
-  type Mission,
   type MissionType,
   type SetupAnswers,
 } from "@nexus/shared";
-import { missionService } from "@/lib/mission-service";
+import type { MissionOrchestrationResult } from "@nexus/agents";
+import {
+  missionOrchestrator,
+  missionService,
+} from "@/lib/mission-service";
 
 const missionTypeSet = new Set<string>(missionTypes);
 
@@ -52,11 +55,9 @@ async function createMission(
     setupAnswers: request.context,
   });
   const mission = await missionService.transitionMission(draft.id, "ACTIVE");
+  const orchestration = await missionOrchestrator.run(mission);
 
-  return NextResponse.json(
-    toResponse(mission, "Mission created, awaiting orchestration"),
-    { status: 201 },
-  );
+  return NextResponse.json(toResponse(orchestration), { status: 201 });
 }
 
 async function resumeMission(
@@ -75,23 +76,27 @@ async function resumeMission(
     existing.status === "DRAFT"
       ? await missionService.transitionMission(existing.id, "ACTIVE")
       : existing;
+  const orchestration = await missionOrchestrator.run(mission);
 
-  return NextResponse.json(
-    toResponse(mission, "Mission resumed, awaiting orchestration"),
-  );
+  return NextResponse.json(toResponse(orchestration));
 }
 
 function toResponse(
-  mission: Mission,
-  currentActivity: string,
+  orchestration: MissionOrchestrationResult,
 ): A2MCPMissionResponse {
+  const { mission } = orchestration;
+
   return {
     accepted: true,
     missionId: mission.id,
     status: mission.status,
     progress: mission.progress,
-    currentActivity,
-    pendingQuestions: [],
+    currentActivity: orchestration.currentActivity,
+    pendingQuestions: orchestration.pendingQuestions,
+    results: mission.researchResults.map((result) => ({
+      ...result,
+      createdAt: result.createdAt.toISOString(),
+    })),
   };
 }
 

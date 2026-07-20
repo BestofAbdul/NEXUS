@@ -42,11 +42,39 @@ interface A2MCPMissionResponse {
   progress: number;
   currentActivity: string;
   pendingQuestions: string[];
+  results: A2MCPMissionResult[];
 }
 ```
 
 Successful creation returns HTTP `201`. Resuming an existing mission returns
 HTTP `200` with the same `missionId`.
+
+For Travel missions with a resolvable destination, Phase 3 runs the Research
+Agent through the registered weather MCP provider. `currentActivity` summarizes
+the actual observation and `results` contains the persisted provider output:
+
+```json
+{
+  "providerId": "open-meteo-weather",
+  "capability": "weather",
+  "summary": "Weather in Tokyo, Japan: ...",
+  "data": {
+    "source": "Open-Meteo",
+    "temperatureC": 25.2,
+    "observedAt": "2026-07-21T07:00",
+    "mcp": {
+      "protocol": "MCP",
+      "serverName": "nexus-open-meteo-weather",
+      "tool": "get_current_weather"
+    }
+  }
+}
+```
+
+Each resume invocation runs orchestration again. If the mission already has a
+persisted weather result, the orchestrator returns that real evidence without
+duplicating the mission, repeating the external request, or inserting a duplicate
+result.
 
 Invalid caller input returns HTTP `400`:
 
@@ -69,9 +97,10 @@ details.
 2. Persist the mission independently of the calling conversation.
 3. Ask the Mission Orchestrator to choose the next internal agent.
 4. Resolve external tools through the MCP provider registry by capability.
-5. Persist research, tasks, recommendations, costs, and timeline events.
-6. Return machine-readable status and any blocking human question.
-7. Continue until the mission reaches `READY` or requires human input.
+5. Call the selected provider through the official MCP client.
+6. Persist research, tasks, recommendations, costs, and timeline events.
+7. Return machine-readable status and any blocking human question.
+8. Continue until the mission reaches `READY` or requires human input.
 
 ## Hard Safety Boundary
 

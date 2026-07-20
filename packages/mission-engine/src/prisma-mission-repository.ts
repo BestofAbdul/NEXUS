@@ -1,7 +1,9 @@
 import { PrismaClient } from "@prisma/client";
 import type {
+  CreateMissionResearchResultInput,
   CreateMissionInput,
   Mission,
+  MissionResearchResult,
   MissionStatus,
   SetupAnswers,
   Task,
@@ -14,6 +16,9 @@ type PrismaMission = Awaited<
   ReturnType<PrismaClient["mission"]["findUniqueOrThrow"]>
 >;
 type PrismaTask = Awaited<ReturnType<PrismaClient["task"]["findUniqueOrThrow"]>>;
+type PrismaResearchResult = Awaited<
+  ReturnType<PrismaClient["missionResearchResult"]["findUniqueOrThrow"]>
+>;
 
 export class PrismaMissionRepository implements MissionRepository {
   constructor(private readonly prisma: PrismaClient) {}
@@ -26,7 +31,10 @@ export class PrismaMissionRepository implements MissionRepository {
         goal: input.goal,
         setupAnswersJson: JSON.stringify(input.setupAnswers ?? {}),
       },
-      include: { tasks: true },
+      include: {
+        tasks: true,
+        researchResults: { orderBy: { createdAt: "asc" } },
+      },
     });
     return toMission(mission);
   }
@@ -34,7 +42,10 @@ export class PrismaMissionRepository implements MissionRepository {
   async findById(id: string): Promise<Mission | null> {
     const mission = await this.prisma.mission.findUnique({
       where: { id },
-      include: { tasks: true },
+      include: {
+        tasks: true,
+        researchResults: { orderBy: { createdAt: "asc" } },
+      },
     });
     return mission ? toMission(mission) : null;
   }
@@ -49,7 +60,10 @@ export class PrismaMissionRepository implements MissionRepository {
           ? JSON.stringify(input.setupAnswers)
           : undefined,
       },
-      include: { tasks: true },
+      include: {
+        tasks: true,
+        researchResults: { orderBy: { createdAt: "asc" } },
+      },
     });
     return toMission(mission);
   }
@@ -58,7 +72,10 @@ export class PrismaMissionRepository implements MissionRepository {
     const mission = await this.prisma.mission.update({
       where: { id },
       data: { status },
-      include: { tasks: true },
+      include: {
+        tasks: true,
+        researchResults: { orderBy: { createdAt: "asc" } },
+      },
     });
     return toMission(mission);
   }
@@ -77,9 +94,31 @@ export class PrismaMissionRepository implements MissionRepository {
       }),
     );
   }
+
+  async createResearchResult(
+    missionId: string,
+    input: CreateMissionResearchResultInput,
+  ): Promise<MissionResearchResult> {
+    return toResearchResult(
+      await this.prisma.missionResearchResult.create({
+        data: {
+          missionId,
+          providerId: input.providerId,
+          capability: input.capability,
+          summary: input.summary,
+          dataJson: JSON.stringify(input.data),
+        },
+      }),
+    );
+  }
 }
 
-function toMission(mission: PrismaMission & { tasks: PrismaTask[] }): Mission {
+function toMission(
+  mission: PrismaMission & {
+    tasks: PrismaTask[];
+    researchResults: PrismaResearchResult[];
+  },
+): Mission {
   return {
     id: mission.id,
     title: mission.title,
@@ -89,8 +128,23 @@ function toMission(mission: PrismaMission & { tasks: PrismaTask[] }): Mission {
     setupAnswers: JSON.parse(mission.setupAnswersJson) as SetupAnswers,
     progress: 0,
     tasks: mission.tasks.map(toTask),
+    researchResults: mission.researchResults.map(toResearchResult),
     createdAt: mission.createdAt,
     updatedAt: mission.updatedAt,
+  };
+}
+
+function toResearchResult(
+  result: PrismaResearchResult,
+): MissionResearchResult {
+  return {
+    id: result.id,
+    missionId: result.missionId,
+    providerId: result.providerId,
+    capability: result.capability,
+    summary: result.summary,
+    data: JSON.parse(result.dataJson) as Record<string, unknown>,
+    createdAt: result.createdAt,
   };
 }
 

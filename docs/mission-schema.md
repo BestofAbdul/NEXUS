@@ -45,3 +45,14 @@ notes. It is informational only and never authorizes a financial action.
 
 An immutable event in mission history. The current event kinds are mission
 creation, lifecycle changes, task completion, and notes.
+
+## MissionResearchResult
+
+An append-only result produced by an internal agent through an MCP provider. It
+belongs to one mission and stores the provider ID, capability, human-readable
+summary, structured JSON data, and creation time.
+
+Phase 3 persists live weather observations here, including Open-Meteo source
+fields and MCP server/tool metadata. Resume invocations reuse existing evidence
+until new research is explicitly needed, rather than replacing mission state or
+creating duplicate missions or results.

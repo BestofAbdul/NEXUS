@@ -60,6 +60,16 @@ export interface TimelineEntry {
   occurredAt: Date;
 }
 
+export interface MissionResearchResult {
+  id: string;
+  missionId: string;
+  providerId: string;
+  capability: string;
+  summary: string;
+  data: Record<string, unknown>;
+  createdAt: Date;
+}
+
 export interface Mission {
   id: string;
   title: string;
@@ -69,6 +79,7 @@ export interface Mission {
   setupAnswers: SetupAnswers;
   progress: number;
   tasks: Task[];
+  researchResults: MissionResearchResult[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -86,11 +97,23 @@ export interface UpdateMissionInput {
   setupAnswers?: SetupAnswers;
 }
 
+export interface CreateMissionResearchResultInput {
+  providerId: string;
+  capability: string;
+  summary: string;
+  data: Record<string, unknown>;
+}
+
 export interface A2MCPMissionRequest {
   goal: string;
   missionType?: MissionType;
   missionId?: string;
   context?: SetupAnswers;
+}
+
+export interface A2MCPMissionResult
+  extends Omit<MissionResearchResult, "createdAt"> {
+  createdAt: string;
 }
 
 export interface A2MCPMissionResponse {
@@ -100,4 +123,5 @@ export interface A2MCPMissionResponse {
   progress: number;
   currentActivity: string;
   pendingQuestions: string[];
+  results: A2MCPMissionResult[];
 }

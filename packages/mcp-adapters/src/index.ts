@@ -16,3 +16,6 @@ export interface MCPProvider {
   readonly capabilities: readonly string[];
   invoke(request: MCPRequest): Promise<MCPResponse>;
 }
+
+export * from "./provider-registry";
+export * from "./weather/open-meteo-weather-provider";

@@ -18,9 +18,9 @@ test.after(async () => {
 
 test("creates and persists an active mission", async () => {
   const response = await invoke({
-    goal: "Plan a five-day trip to Tokyo",
-    missionType: "TRAVEL",
-    context: { destination: "Tokyo" },
+    goal: "Prepare for a senior engineering job search",
+    missionType: "NEW_JOB",
+    context: { industry: "Software" },
   });
   const body = await response.json();
 
@@ -28,8 +28,12 @@ test("creates and persists an active mission", async () => {
   assert.equal(body.accepted, true);
   assert.equal(body.status, "ACTIVE");
   assert.equal(body.progress, 0);
-  assert.equal(body.currentActivity, "Mission created, awaiting orchestration");
+  assert.equal(
+    body.currentActivity,
+    "Mission active; no Phase 3 research capability applies.",
+  );
   assert.deepEqual(body.pendingQuestions, []);
+  assert.deepEqual(body.results, []);
   assert.equal(typeof body.missionId, "string");
 
   createdMissionIds.add(body.missionId);
@@ -39,7 +43,7 @@ test("creates and persists an active mission", async () => {
 
   assert.ok(persisted);
   assert.equal(persisted.status, "ACTIVE");
-  assert.equal(persisted.goal, "Plan a five-day trip to Tokyo");
+  assert.equal(persisted.goal, "Prepare for a senior engineering job search");
 });
 
 test("resumes an existing mission without creating a duplicate", async () => {
@@ -64,7 +68,11 @@ test("resumes an existing mission without creating a duplicate", async () => {
   assert.equal(resumed.accepted, true);
   assert.equal(resumed.missionId, created.missionId);
   assert.equal(resumed.status, "ACTIVE");
-  assert.equal(resumed.currentActivity, "Mission resumed, awaiting orchestration");
+  assert.equal(
+    resumed.currentActivity,
+    "Mission active; no Phase 3 research capability applies.",
+  );
+  assert.deepEqual(resumed.results, []);
   assert.equal(afterCreateCount, beforeCount + 1);
   assert.equal(afterResumeCount, afterCreateCount);
 });
@@ -91,6 +99,44 @@ test("returns clean errors for invalid requests", async () => {
   assert.equal(invalidType.error.code, "INVALID_MISSION_TYPE");
 });
 
+test("runs real weather research through MCP and persists it across resume", async () => {
+  const createResponse = await invoke({
+    goal: "Plan a five-day trip to Tokyo",
+    missionType: "TRAVEL",
+  });
+  const created = await createResponse.json();
+
+  assert.equal(createResponse.status, 201);
+  assert.equal(created.accepted, true);
+  assert.equal(created.status, "ACTIVE");
+  assert.match(created.currentActivity, /Weather in Tokyo, Japan:/);
+  assert.equal(created.results.length, 1);
+  assertWeatherResult(created.results[0]);
+
+  createdMissionIds.add(created.missionId);
+  const firstPersistedCount = await prisma.missionResearchResult.count({
+    where: { missionId: created.missionId },
+  });
+  assert.equal(firstPersistedCount, 1);
+
+  const resumeResponse = await invoke({
+    goal: "Continue the Tokyo travel mission",
+    missionId: created.missionId,
+  });
+  const resumed = await resumeResponse.json();
+
+  assert.equal(resumeResponse.status, 200);
+  assert.equal(resumed.missionId, created.missionId);
+  assert.match(resumed.currentActivity, /Weather in Tokyo, Japan:/);
+  assert.equal(resumed.results.length, 1);
+  assertWeatherResult(resumed.results[0]);
+
+  const secondPersistedCount = await prisma.missionResearchResult.count({
+    where: { missionId: created.missionId },
+  });
+  assert.equal(secondPersistedCount, 1);
+});
+
 function invoke(body: Record<string, unknown>): Promise<Response> {
   return POST(
     new Request("http://localhost/api/a2mcp/mission", {
@@ -99,4 +145,18 @@ function invoke(body: Record<string, unknown>): Promise<Response> {
       body: JSON.stringify(body),
     }),
   );
+}
+
+function assertWeatherResult(result: Record<string, any>): void {
+  assert.equal(result.providerId, "open-meteo-weather");
+  assert.equal(result.capability, "weather");
+  assert.equal(result.data.source, "Open-Meteo");
+  assert.equal(result.data.location, "Tokyo");
+  assert.equal(result.data.country, "Japan");
+  assert.equal(typeof result.data.temperatureC, "number");
+  assert.equal(typeof result.data.observedAt, "string");
+  assert.equal(result.data.mcp.protocol, "MCP");
+  assert.equal(result.data.mcp.transport, "in-memory");
+  assert.equal(result.data.mcp.serverName, "nexus-open-meteo-weather");
+  assert.equal(result.data.mcp.tool, "get_current_weather");
 }

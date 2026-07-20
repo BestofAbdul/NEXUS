@@ -1,4 +1,9 @@
 import { PrismaClient } from "@prisma/client";
+import { MissionOrchestrator, ResearchAgent } from "@nexus/agents";
+import {
+  MCPProviderRegistry,
+  OpenMeteoWeatherProvider,
+} from "@nexus/mcp-adapters";
 import {
   MissionService,
   PrismaMissionRepository,
@@ -20,4 +25,14 @@ if (process.env.NODE_ENV !== "production") {
 
 export const missionService = new MissionService(
   new PrismaMissionRepository(prisma),
+);
+
+const mcpProviders = new MCPProviderRegistry([
+  new OpenMeteoWeatherProvider(),
+]);
+const researchAgent = new ResearchAgent(mcpProviders);
+
+export const missionOrchestrator = new MissionOrchestrator(
+  missionService,
+  researchAgent,
 );

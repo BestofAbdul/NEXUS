@@ -78,6 +78,37 @@ mapping only. Mission creation, reads, and lifecycle transitions remain in
 logic. Keeping lifecycle behavior out of the route prevents the UI or protocol
 layer from becoming a second mission implementation.
 
+## 2026-07-20 - Use the official MCP SDK with a linked in-memory transport
+
+**Decision:** Use `@modelcontextprotocol/sdk` `1.29.0` to connect the NEXUS
+weather MCP client and server through `InMemoryTransport`, then invoke
+`get_current_weather` with `Client.callTool`.
+
+**Rationale:** This is the smallest real MCP vertical slice that works inside a
+Next.js route without spawning a sidecar process. It exercises MCP capability
+negotiation, tool validation, and structured tool results while the provider
+interface remains swappable for a remote Streamable HTTP server later.
+
+## 2026-07-20 - Use Open-Meteo for the first real research provider
+
+**Decision:** The weather MCP tool resolves destinations and fetches current
+weather through Open-Meteo's public geocoding and forecast APIs.
+
+**Rationale:** It requires no payment or account credentials, returns structured
+observations, and provides a verifiable real-world result for the Travel mission
+vertical slice.
+
+## 2026-07-20 - Persist research results as append-only mission records
+
+**Decision:** Store each agent result in `MissionResearchResult` with provider,
+capability, summary, JSON data, and timestamp.
+
+**Rationale:** A resume invocation should preserve evidence from earlier runs.
+The orchestrator reuses existing weather evidence instead of repeating an
+external call merely because the mission was resumed. New research can still
+append fresh records later without hardcoding weather-specific columns into
+mission business logic.
+
 ## Pending - OKX ASP integration
 
 Before Phase 4, document the current official OKX.AI ASP API shape,

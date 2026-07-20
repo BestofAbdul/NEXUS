@@ -104,7 +104,7 @@ capability, keeping providers swappable.
 
 ## Current Status
 
-Phase 2 is complete:
+Phase 3 is complete:
 
 - pnpm monorepo and Next.js operator control plane
 - shared mission domain model
@@ -114,9 +114,13 @@ Phase 2 is complete:
 - executable create/fetch verification script
 - `POST /api/a2mcp/mission` for persistent mission creation and resume
 - direct route-handler tests for create, resume, and invalid input
+- Mission Orchestrator and Research Agent behind the A2MCP endpoint
+- official MCP TypeScript SDK client/server tool invocation
+- live Open-Meteo destination weather research
+- persisted research results returned on create and resume
 
-The next vertical slice is the Mission Orchestrator and a callable Research Agent
-using one real MCP provider.
+The next phase adds recommendations, cost analysis, notifications, and the
+verified OKX.AI ASP integration contract.
 
 ## Local Development
 

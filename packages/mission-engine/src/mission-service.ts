@@ -1,6 +1,8 @@
 import type {
+  CreateMissionResearchResultInput,
   CreateMissionInput,
   Mission,
+  MissionResearchResult,
   MissionStatus,
   Task,
   UpdateMissionInput,
@@ -37,6 +39,14 @@ export class MissionService {
 
   updateTaskStatus(taskId: string, status: Task["status"]): Promise<Task> {
     return this.repository.updateTaskStatus(taskId, status);
+  }
+
+  async addResearchResult(
+    missionId: string,
+    input: CreateMissionResearchResultInput,
+  ): Promise<MissionResearchResult> {
+    await this.requireMission(missionId);
+    return this.repository.createResearchResult(missionId, input);
   }
 
   private async requireMission(id: string): Promise<Mission> {
