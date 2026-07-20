@@ -1,5 +1,7 @@
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {};
+const nextConfig: NextConfig = {
+  transpilePackages: ["@nexus/mission-engine", "@nexus/shared"],
+};
 
 export default nextConfig;

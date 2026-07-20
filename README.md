@@ -104,7 +104,7 @@ capability, keeping providers swappable.
 
 ## Current Status
 
-Phase 1 is complete:
+Phase 2 is complete:
 
 - pnpm monorepo and Next.js operator control plane
 - shared mission domain model
@@ -112,8 +112,11 @@ Phase 1 is complete:
 - create, read, update, lifecycle transition, and progress operations
 - lifecycle tests for `DRAFT -> ACTIVE -> READY`
 - executable create/fetch verification script
+- `POST /api/a2mcp/mission` for persistent mission creation and resume
+- direct route-handler tests for create, resume, and invalid input
 
-The next vertical slice is a callable Research Agent using one real MCP provider.
+The next vertical slice is the Mission Orchestrator and a callable Research Agent
+using one real MCP provider.
 
 ## Local Development
 

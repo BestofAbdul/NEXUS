@@ -16,6 +16,11 @@ manifest, authentication, and transport fields pending official verification.
 
 An invocation creates a new mission or continues an existing mission.
 
+```http
+POST /api/a2mcp/mission
+Content-Type: application/json
+```
+
 ```ts
 interface A2MCPMissionRequest {
   goal: string;
@@ -39,6 +44,24 @@ interface A2MCPMissionResponse {
   pendingQuestions: string[];
 }
 ```
+
+Successful creation returns HTTP `201`. Resuming an existing mission returns
+HTTP `200` with the same `missionId`.
+
+Invalid caller input returns HTTP `400`:
+
+```json
+{
+  "error": {
+    "code": "INVALID_GOAL",
+    "message": "goal is required and must be a non-empty string."
+  }
+}
+```
+
+An unknown `missionId` returns HTTP `404` with `MISSION_NOT_FOUND`. Unexpected
+service failures return a generic `500` response without exposing internal
+details.
 
 ## Execution Model
 

@@ -10,6 +10,15 @@ importers:
 
   apps/web:
     dependencies:
+      '@nexus/mission-engine':
+        specifier: workspace:*
+        version: link:../../packages/mission-engine
+      '@nexus/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      '@prisma/client':
+        specifier: 6.19.1
+        version: 6.19.1(prisma@6.19.1(typescript@5.9.3))(typescript@5.9.3)
       next:
         specifier: 16.2.10
         version: 16.2.10(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -35,6 +44,9 @@ importers:
       tailwindcss:
         specifier: ^4.1.18
         version: 4.3.3
+      tsx:
+        specifier: 4.20.6
+        version: 4.20.6
       typescript:
         specifier: ^5.9.3
         version: 5.9.3

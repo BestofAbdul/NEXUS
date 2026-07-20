@@ -5,8 +5,8 @@ import type {
   Task,
   UpdateMissionInput,
 } from "@nexus/shared";
-import { assertMissionTransition, calculateMissionProgress } from "./lifecycle.js";
-import type { MissionRepository } from "./persistence.js";
+import { assertMissionTransition, calculateMissionProgress } from "./lifecycle";
+import type { MissionRepository } from "./persistence";
 
 export class MissionService {
   constructor(private readonly repository: MissionRepository) {}

@@ -8,7 +8,7 @@ import type {
   TaskStatus,
   UpdateMissionInput,
 } from "@nexus/shared";
-import type { MissionRepository } from "./persistence.js";
+import type { MissionRepository } from "./persistence";
 
 type PrismaMission = Awaited<
   ReturnType<PrismaClient["mission"]["findUniqueOrThrow"]>

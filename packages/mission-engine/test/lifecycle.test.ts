@@ -4,7 +4,7 @@ import type { Task } from "@nexus/shared";
 import {
   assertMissionTransition,
   calculateMissionProgress,
-} from "../src/lifecycle.js";
+} from "../src/lifecycle";
 
 const task = (status: Task["status"]): Pick<Task, "status"> => ({ status });
 

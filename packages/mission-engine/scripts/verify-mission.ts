@@ -2,7 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import {
   MissionService,
   PrismaMissionRepository,
-} from "../src/index.js";
+} from "../src/index";
 
 const prisma = new PrismaClient();
 const service = new MissionService(new PrismaMissionRepository(prisma));

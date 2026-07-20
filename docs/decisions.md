@@ -19,6 +19,11 @@ build. This can be revisited when package build graphs become meaningful.
 destroying prior work while giving NEXUS the fixed repository shape required by
 the build instructions.
 
+**2026-07-20 audit:** The folder exists locally at the repository root and is
+ignored by Git. It has never been tracked and no `agenthub/` object or path
+exists in NEXUS Git history. This entry documents preservation of local,
+out-of-repository work only; NEXUS does not depend on it.
+
 ## 2026-07-19 - Start with Next.js API routes, no separate server
 
 **Decision:** Keep the backend in Next.js API routes for the current mission
@@ -62,6 +67,16 @@ application is a secondary operator control plane.
 not as a conventional consumer web application. Architecture, documentation, and
 demo flows should lead with machine-to-machine invocation and persistent mission
 execution.
+
+## 2026-07-20 - Keep the A2MCP route as a thin Mission Engine adapter
+
+**Decision:** `POST /api/a2mcp/mission` owns transport validation and response
+mapping only. Mission creation, reads, and lifecycle transitions remain in
+`@nexus/mission-engine`.
+
+**Rationale:** The API and future operator UI must share one source of business
+logic. Keeping lifecycle behavior out of the route prevents the UI or protocol
+layer from becoming a second mission implementation.
 
 ## Pending - OKX ASP integration
 
