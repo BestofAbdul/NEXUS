@@ -43,15 +43,20 @@ interface A2MCPMissionResponse {
   currentActivity: string;
   pendingQuestions: string[];
   results: A2MCPMissionResult[];
+  recommendations: A2MCPRecommendation[];
+  costBreakdown: A2MCPCostBreakdown;
+  notifications: A2MCPNotification[];
 }
 ```
 
-Successful creation returns HTTP `201`. Resuming an existing mission returns
-HTTP `200` with the same `missionId`.
+Successful creation and resume both return HTTP `200`, as required for a free
+OKX.AI A2MCP service. Resume returns the same `missionId`.
 
-For Travel missions with a resolvable destination, Phase 3 runs the Research
+For Travel missions with a resolvable destination, NEXUS runs the Research
 Agent through the registered weather MCP provider. `currentActivity` summarizes
-the actual observation and `results` contains the persisted provider output:
+real orchestration state and `results` contains the persisted provider output.
+Phase 4 then returns ranked `recommendations`, an informational
+`costBreakdown`, and persisted `notifications`:
 
 ```json
 {
@@ -113,17 +118,11 @@ must never:
 - sign a transaction or accept contractual terms;
 - represent a recommendation as a completed human action.
 
-## Platform Fields Pending Verification
+## OKX.AI Service Form
 
-Before implementing the public ASP endpoint, verify and document the current
-official OKX.AI requirements for:
-
-- transport and endpoint shape;
-- authentication and request signing;
-- service manifest and capability declaration;
-- streaming, callbacks, or polling;
-- health checks and review criteria;
-- marketplace listing metadata.
-
-The verified fields will be recorded in `docs/decisions.md` under
-"OKX ASP integration."
+NEXUS uses the verified free A2MCP service form: a public HTTPS endpoint that
+returns its JSON result directly with HTTP `200`, with listing fee `"0"`.
+Official documentation currently defines no repository manifest or free-service
+request signing scheme, so neither is invented here. Marketplace identity,
+validation, review, and activation requirements are recorded in
+`docs/decisions.md`.

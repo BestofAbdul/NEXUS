@@ -104,7 +104,7 @@ capability, keeping providers swappable.
 
 ## Current Status
 
-Phase 3 is complete:
+Phase 4 is complete:
 
 - pnpm monorepo and Next.js operator control plane
 - shared mission domain model
@@ -118,9 +118,11 @@ Phase 3 is complete:
 - official MCP TypeScript SDK client/server tool invocation
 - live Open-Meteo destination weather research
 - persisted research results returned on create and resume
-
-The next phase adds recommendations, cost analysis, notifications, and the
-verified OKX.AI ASP integration contract.
+- ranked recommendations derived from persisted research evidence
+- informational cost line items and total returned through A2MCP
+- persisted, idempotent orchestration notifications
+- verified free OKX.AI A2MCP behavior with direct HTTP `200`
+- documented marketplace identity, validation, review, and activation gates
 
 ## Local Development
 
@@ -140,9 +142,9 @@ fetches it through the Mission Engine.
 ## Hackathon
 
 NEXUS is being developed for the **OKX.AI Genesis Hackathon** as an Agent Service
-Provider. A valid release must satisfy the verified OKX.AI ASP technical review
-and marketplace listing requirements; those requirements will be recorded before
-the integration is implemented.
+Provider. NEXUS implements the verified free endpoint behavior; public listing
+still requires the owner-controlled deployment, Agentic Wallet registration,
+review, and activation steps recorded in `docs/decisions.md`.
 
 ## License
 

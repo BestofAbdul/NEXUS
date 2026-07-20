@@ -57,7 +57,7 @@ async function createMission(
   const mission = await missionService.transitionMission(draft.id, "ACTIVE");
   const orchestration = await missionOrchestrator.run(mission);
 
-  return NextResponse.json(toResponse(orchestration), { status: 201 });
+  return NextResponse.json(toResponse(orchestration), { status: 200 });
 }
 
 async function resumeMission(
@@ -96,6 +96,27 @@ function toResponse(
     results: mission.researchResults.map((result) => ({
       ...result,
       createdAt: result.createdAt.toISOString(),
+    })),
+    recommendations: mission.recommendations.map((recommendation) => ({
+      ...recommendation,
+      createdAt: recommendation.createdAt.toISOString(),
+    })),
+    costBreakdown: {
+      currency: mission.costEstimates[0]?.currency ?? "USD",
+      lineItems: mission.costEstimates.map((estimate) => ({
+        ...estimate,
+        createdAt: estimate.createdAt.toISOString(),
+      })),
+      total: mission.costEstimates.reduce(
+        (total, estimate) => total + estimate.amount,
+        0,
+      ),
+      disclaimer:
+        "Informational estimate only. NEXUS never pays, books, or accesses financial accounts.",
+    },
+    notifications: mission.notifications.map((notification) => ({
+      ...notification,
+      createdAt: notification.createdAt.toISOString(),
     })),
   };
 }

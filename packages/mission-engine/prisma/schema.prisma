@@ -18,6 +18,9 @@ model Mission {
   updatedAt        DateTime @updatedAt
   tasks            Task[]
   researchResults  MissionResearchResult[]
+  recommendations  Recommendation[]
+  costEstimates    CostEstimate[]
+  notifications    MissionNotification[]
 }
 
 model Task {
@@ -44,4 +47,43 @@ model MissionResearchResult {
   mission    Mission  @relation(fields: [missionId], references: [id], onDelete: Cascade)
 
   @@index([missionId])
+}
+
+model Recommendation {
+  id        String   @id @default(cuid())
+  missionId String
+  title     String
+  summary   String
+  rationale String
+  rank      Int
+  createdAt DateTime @default(now())
+  mission   Mission  @relation(fields: [missionId], references: [id], onDelete: Cascade)
+
+  @@index([missionId])
+  @@unique([missionId, rank])
+}
+
+model CostEstimate {
+  id        String   @id @default(cuid())
+  missionId String
+  category  String
+  amount    Float
+  currency  String
+  notes     String?
+  createdAt DateTime @default(now())
+  mission   Mission  @relation(fields: [missionId], references: [id], onDelete: Cascade)
+
+  @@index([missionId])
+  @@unique([missionId, category])
+}
+
+model MissionNotification {
+  id        String   @id @default(cuid())
+  missionId String
+  message   String
+  createdAt DateTime @default(now())
+  mission   Mission  @relation(fields: [missionId], references: [id], onDelete: Cascade)
+
+  @@index([missionId])
+  @@unique([missionId, message])
 }

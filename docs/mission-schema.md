@@ -41,6 +41,12 @@ account operations.
 A mission budget line item: category, numeric amount, currency, and optional
 notes. It is informational only and never authorizes a financial action.
 
+## MissionNotification
+
+An immutable, mission-owned status update emitted by the Notification Agent
+after a real orchestration stage completes. Unique mission/message storage keeps
+resume invocations idempotent.
+
 ## TimelineEntry
 
 An immutable event in mission history. The current event kinds are mission
@@ -56,3 +62,7 @@ Phase 3 persists live weather observations here, including Open-Meteo source
 fields and MCP server/tool metadata. Resume invocations reuse existing evidence
 until new research is explicitly needed, rather than replacing mission state or
 creating duplicate missions or results.
+
+Phase 4 stores recommendations, cost estimates, and notifications as separate
+mission-owned records. Agents consume the persisted research evidence, and a
+resume invocation returns the same outputs rather than inserting duplicates.

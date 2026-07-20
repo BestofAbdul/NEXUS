@@ -109,7 +109,92 @@ external call merely because the mission was resumed. New research can still
 append fresh records later without hardcoding weather-specific columns into
 mission business logic.
 
-## Pending - OKX ASP integration
+## 2026-07-20 - OKX ASP integration requirements verified
 
-Before Phase 4, document the current official OKX.AI ASP API shape,
-authentication, manifest, and marketplace listing requirements here.
+**Sources checked:**
+
+- OKX.AI A2MCP Guide:
+  `https://web3.okx.com/onchainos/dev-docs/okxai/howtomcp`
+- OKX.AI ASP Registration:
+  `https://web3.okx.com/onchainos/dev-docs/okxai/registerasp`
+- Official Onchain OS ASP identity registration workflow:
+  `https://github.com/okx/onchainos-skills/blob/main/skills/okx-ai/references/identity-register.md`
+- OKX Payment SDK seller integration:
+  `https://web3.okx.com/onchainos/dev-docs/payments/service-seller-sdk`
+
+**Verified endpoint requirement:** An A2MCP service must use one of two forms:
+
+1. Free endpoint: returns the result directly with HTTP `200`; no x402 payment
+   challenge or billing middleware.
+2. Paid endpoint: first returns a standard HTTP `402 Payment Required` x402
+   challenge, then returns the result when the paid request is replayed. The OKX
+   Payment SDK is the recommended implementation.
+
+Both forms must be deployed at a publicly reachable HTTPS URL tied to a domain.
+Registration rejects HTTP, localhost, loopback/private addresses, local/internal
+hostnames, placeholders, and endpoint URLs longer than 512 characters.
+
+**Authentication finding:** The current free-endpoint documentation does not
+specify an OKX request-authentication header or signing scheme. The endpoint is
+called directly. Paid endpoint authentication is payment verification through
+x402/OKX Payment SDK, which requires OKX Developer credentials and a receiving
+wallet.
+
+**Manifest finding:** The current official OKX.AI documentation does not define
+a repository manifest file or JSON manifest endpoint for A2MCP ASPs. Do not
+invent one. Listing data is submitted through the Onchain OS Agent Identity
+registration workflow.
+
+**Verified listing fields and workflow:**
+
+- Install the official Onchain OS skill and authenticate through Agentic Wallet.
+- Register an ASP identity with a brand name, required description, and required
+  uploaded avatar file; avatar URLs are rejected.
+- Submit one or more services. Each A2MCP service needs a descriptive service
+  name, a two-part description (capability/audience and required caller inputs),
+  canonical type `A2MCP`, fee as a quoted numeric string in USDT (`"0"` for
+  free), and the public HTTPS endpoint.
+- The service name must be a descriptive noun phrase. Listing descriptions must
+  not expose implementation-stack details, links, examples, or disclaimers.
+- Run the official `validate-listing` gate once on the complete ASP/service
+  payload, review any blocking findings, then confirm the on-chain identity
+  creation.
+- Registration alone is not marketplace visibility. The ASP must then be
+  activated/listed, pass OKX review, and go live. Official docs state review is
+  normally completed within 24 hours/one business day.
+
+**Decision for NEXUS:** Implement the Phase 4 endpoint as a **free A2MCP
+service** with fee `"0"`. This avoids x402 and receiving-wallet integration,
+preserves NEXUS's no-payment/no-financial-account boundary, and requires direct
+HTTP `200` JSON responses. No speculative manifest or authentication scheme will
+be added.
+
+**External release gate:** Code can implement and verify the compliant free
+endpoint locally, but marketplace eligibility additionally requires a deployed
+public HTTPS URL, uploaded avatar, Agentic Wallet identity registration,
+`validate-listing`, review, and activation. Those account-bound steps cannot be
+truthfully claimed complete until performed with the owner's OKX credentials and
+deployment domain.
+
+## 2026-07-20 - Persist Phase 4 outputs as idempotent mission state
+
+**Decision:** Store ranked recommendations, informational cost estimates, and
+notifications as mission-owned records. The orchestrator creates each output set
+once and reuses it on resume.
+
+**Rationale:** A2MCP resume calls must continue one persistent mission without
+duplicating work. Separate records keep the API machine-readable and preserve
+the Mission Engine as the source of truth. Unique rank/category/message
+constraints protect the current one-pass Phase 4 flow from accidental duplicate
+inserts.
+
+## 2026-07-20 - Keep Phase 4 cost analysis deterministic and non-transactional
+
+**Decision:** The Cost Analysis Agent returns a bounded USD planning allowance
+for local transport, meals, weather preparation, and contingency. It does not
+quote bookings or invoke payment services.
+
+**Rationale:** Phase 4 needs a demonstrable cost breakdown while preserving the
+hard boundary against payments, bookings, wallets, and financial accounts.
+Every response labels the total as informational and subject to human
+verification.

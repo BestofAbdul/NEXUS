@@ -1,10 +1,15 @@
 import { PrismaClient } from "@prisma/client";
 import type {
+  CostEstimate,
+  CreateCostEstimateInput,
+  CreateRecommendationInput,
   CreateMissionResearchResultInput,
   CreateMissionInput,
   Mission,
+  MissionNotification,
   MissionResearchResult,
   MissionStatus,
+  Recommendation,
   SetupAnswers,
   Task,
   TaskStatus,
@@ -19,6 +24,23 @@ type PrismaTask = Awaited<ReturnType<PrismaClient["task"]["findUniqueOrThrow"]>>
 type PrismaResearchResult = Awaited<
   ReturnType<PrismaClient["missionResearchResult"]["findUniqueOrThrow"]>
 >;
+type PrismaRecommendation = Awaited<
+  ReturnType<PrismaClient["recommendation"]["findUniqueOrThrow"]>
+>;
+type PrismaCostEstimate = Awaited<
+  ReturnType<PrismaClient["costEstimate"]["findUniqueOrThrow"]>
+>;
+type PrismaNotification = Awaited<
+  ReturnType<PrismaClient["missionNotification"]["findUniqueOrThrow"]>
+>;
+
+const missionIncludes = {
+  tasks: true,
+  researchResults: { orderBy: { createdAt: "asc" as const } },
+  recommendations: { orderBy: { rank: "asc" as const } },
+  costEstimates: { orderBy: { createdAt: "asc" as const } },
+  notifications: { orderBy: { createdAt: "asc" as const } },
+};
 
 export class PrismaMissionRepository implements MissionRepository {
   constructor(private readonly prisma: PrismaClient) {}
@@ -31,10 +53,7 @@ export class PrismaMissionRepository implements MissionRepository {
         goal: input.goal,
         setupAnswersJson: JSON.stringify(input.setupAnswers ?? {}),
       },
-      include: {
-        tasks: true,
-        researchResults: { orderBy: { createdAt: "asc" } },
-      },
+      include: missionIncludes,
     });
     return toMission(mission);
   }
@@ -42,10 +61,7 @@ export class PrismaMissionRepository implements MissionRepository {
   async findById(id: string): Promise<Mission | null> {
     const mission = await this.prisma.mission.findUnique({
       where: { id },
-      include: {
-        tasks: true,
-        researchResults: { orderBy: { createdAt: "asc" } },
-      },
+      include: missionIncludes,
     });
     return mission ? toMission(mission) : null;
   }
@@ -60,10 +76,7 @@ export class PrismaMissionRepository implements MissionRepository {
           ? JSON.stringify(input.setupAnswers)
           : undefined,
       },
-      include: {
-        tasks: true,
-        researchResults: { orderBy: { createdAt: "asc" } },
-      },
+      include: missionIncludes,
     });
     return toMission(mission);
   }
@@ -72,10 +85,7 @@ export class PrismaMissionRepository implements MissionRepository {
     const mission = await this.prisma.mission.update({
       where: { id },
       data: { status },
-      include: {
-        tasks: true,
-        researchResults: { orderBy: { createdAt: "asc" } },
-      },
+      include: missionIncludes,
     });
     return toMission(mission);
   }
@@ -111,12 +121,58 @@ export class PrismaMissionRepository implements MissionRepository {
       }),
     );
   }
+
+  async createRecommendations(
+    missionId: string,
+    inputs: CreateRecommendationInput[],
+  ): Promise<Recommendation[]> {
+    await this.prisma.recommendation.createMany({
+      data: inputs.map((input) => ({ missionId, ...input })),
+    });
+    return (
+      await this.prisma.recommendation.findMany({
+        where: { missionId },
+        orderBy: { rank: "asc" },
+      })
+    ).map(toRecommendation);
+  }
+
+  async createCostEstimates(
+    missionId: string,
+    inputs: CreateCostEstimateInput[],
+  ): Promise<CostEstimate[]> {
+    await this.prisma.costEstimate.createMany({
+      data: inputs.map((input) => ({ missionId, ...input })),
+    });
+    return (
+      await this.prisma.costEstimate.findMany({
+        where: { missionId },
+        orderBy: { createdAt: "asc" },
+      })
+    ).map(toCostEstimate);
+  }
+
+  async createNotification(
+    missionId: string,
+    message: string,
+  ): Promise<MissionNotification> {
+    return toNotification(
+      await this.prisma.missionNotification.upsert({
+        where: { missionId_message: { missionId, message } },
+        create: { missionId, message },
+        update: {},
+      }),
+    );
+  }
 }
 
 function toMission(
   mission: PrismaMission & {
     tasks: PrismaTask[];
     researchResults: PrismaResearchResult[];
+    recommendations: PrismaRecommendation[];
+    costEstimates: PrismaCostEstimate[];
+    notifications: PrismaNotification[];
   },
 ): Mission {
   return {
@@ -129,8 +185,44 @@ function toMission(
     progress: 0,
     tasks: mission.tasks.map(toTask),
     researchResults: mission.researchResults.map(toResearchResult),
+    recommendations: mission.recommendations.map(toRecommendation),
+    costEstimates: mission.costEstimates.map(toCostEstimate),
+    notifications: mission.notifications.map(toNotification),
     createdAt: mission.createdAt,
     updatedAt: mission.updatedAt,
+  };
+}
+
+function toRecommendation(item: PrismaRecommendation): Recommendation {
+  return {
+    id: item.id,
+    missionId: item.missionId,
+    title: item.title,
+    summary: item.summary,
+    rationale: item.rationale,
+    rank: item.rank,
+    createdAt: item.createdAt,
+  };
+}
+
+function toCostEstimate(item: PrismaCostEstimate): CostEstimate {
+  return {
+    id: item.id,
+    missionId: item.missionId,
+    category: item.category,
+    amount: item.amount,
+    currency: item.currency,
+    notes: item.notes,
+    createdAt: item.createdAt,
+  };
+}
+
+function toNotification(item: PrismaNotification): MissionNotification {
+  return {
+    id: item.id,
+    missionId: item.missionId,
+    message: item.message,
+    createdAt: item.createdAt,
   };
 }
 

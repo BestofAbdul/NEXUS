@@ -1,9 +1,14 @@
 import type {
+  CostEstimate,
+  CreateCostEstimateInput,
+  CreateRecommendationInput,
   CreateMissionResearchResultInput,
   CreateMissionInput,
   Mission,
+  MissionNotification,
   MissionResearchResult,
   MissionStatus,
+  Recommendation,
   Task,
   UpdateMissionInput,
 } from "@nexus/shared";
@@ -19,4 +24,16 @@ export interface MissionRepository {
     missionId: string,
     input: CreateMissionResearchResultInput,
   ): Promise<MissionResearchResult>;
+  createRecommendations(
+    missionId: string,
+    inputs: CreateRecommendationInput[],
+  ): Promise<Recommendation[]>;
+  createCostEstimates(
+    missionId: string,
+    inputs: CreateCostEstimateInput[],
+  ): Promise<CostEstimate[]>;
+  createNotification(
+    missionId: string,
+    message: string,
+  ): Promise<MissionNotification>;
 }

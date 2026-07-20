@@ -1,9 +1,14 @@
 import type {
+  CostEstimate,
+  CreateCostEstimateInput,
+  CreateRecommendationInput,
   CreateMissionResearchResultInput,
   CreateMissionInput,
   Mission,
+  MissionNotification,
   MissionResearchResult,
   MissionStatus,
+  Recommendation,
   Task,
   UpdateMissionInput,
 } from "@nexus/shared";
@@ -47,6 +52,30 @@ export class MissionService {
   ): Promise<MissionResearchResult> {
     await this.requireMission(missionId);
     return this.repository.createResearchResult(missionId, input);
+  }
+
+  async addRecommendations(
+    missionId: string,
+    inputs: CreateRecommendationInput[],
+  ): Promise<Recommendation[]> {
+    await this.requireMission(missionId);
+    return this.repository.createRecommendations(missionId, inputs);
+  }
+
+  async addCostEstimates(
+    missionId: string,
+    inputs: CreateCostEstimateInput[],
+  ): Promise<CostEstimate[]> {
+    await this.requireMission(missionId);
+    return this.repository.createCostEstimates(missionId, inputs);
+  }
+
+  async addNotification(
+    missionId: string,
+    message: string,
+  ): Promise<MissionNotification> {
+    await this.requireMission(missionId);
+    return this.repository.createNotification(missionId, message);
   }
 
   private async requireMission(id: string): Promise<Mission> {

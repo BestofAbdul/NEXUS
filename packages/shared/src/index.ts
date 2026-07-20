@@ -52,6 +52,13 @@ export interface CostEstimate {
   createdAt: Date;
 }
 
+export interface MissionNotification {
+  id: string;
+  missionId: string;
+  message: string;
+  createdAt: Date;
+}
+
 export interface TimelineEntry {
   id: string;
   missionId: string;
@@ -80,6 +87,9 @@ export interface Mission {
   progress: number;
   tasks: Task[];
   researchResults: MissionResearchResult[];
+  recommendations: Recommendation[];
+  costEstimates: CostEstimate[];
+  notifications: MissionNotification[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -104,6 +114,16 @@ export interface CreateMissionResearchResultInput {
   data: Record<string, unknown>;
 }
 
+export type CreateRecommendationInput = Pick<
+  Recommendation,
+  "title" | "summary" | "rationale" | "rank"
+>;
+
+export type CreateCostEstimateInput = Pick<
+  CostEstimate,
+  "category" | "amount" | "currency" | "notes"
+>;
+
 export interface A2MCPMissionRequest {
   goal: string;
   missionType?: MissionType;
@@ -116,6 +136,28 @@ export interface A2MCPMissionResult
   createdAt: string;
 }
 
+export interface A2MCPRecommendation
+  extends Omit<Recommendation, "createdAt"> {
+  createdAt: string;
+}
+
+export interface A2MCPCostLineItem
+  extends Omit<CostEstimate, "createdAt"> {
+  createdAt: string;
+}
+
+export interface A2MCPCostBreakdown {
+  currency: string;
+  lineItems: A2MCPCostLineItem[];
+  total: number;
+  disclaimer: string;
+}
+
+export interface A2MCPNotification
+  extends Omit<MissionNotification, "createdAt"> {
+  createdAt: string;
+}
+
 export interface A2MCPMissionResponse {
   accepted: boolean;
   missionId: string;
@@ -124,4 +166,7 @@ export interface A2MCPMissionResponse {
   currentActivity: string;
   pendingQuestions: string[];
   results: A2MCPMissionResult[];
+  recommendations: A2MCPRecommendation[];
+  costBreakdown: A2MCPCostBreakdown;
+  notifications: A2MCPNotification[];
 }

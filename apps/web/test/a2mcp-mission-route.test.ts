@@ -24,16 +24,19 @@ test("creates and persists an active mission", async () => {
   });
   const body = await response.json();
 
-  assert.equal(response.status, 201);
+  assert.equal(response.status, 200);
   assert.equal(body.accepted, true);
   assert.equal(body.status, "ACTIVE");
   assert.equal(body.progress, 0);
   assert.equal(
     body.currentActivity,
-    "Mission active; no Phase 3 research capability applies.",
+    "Mission active; the Phase 4 agent flow currently supports Travel missions.",
   );
   assert.deepEqual(body.pendingQuestions, []);
   assert.deepEqual(body.results, []);
+  assert.deepEqual(body.recommendations, []);
+  assert.equal(body.costBreakdown.total, 0);
+  assert.deepEqual(body.notifications, []);
   assert.equal(typeof body.missionId, "string");
 
   createdMissionIds.add(body.missionId);
@@ -63,14 +66,14 @@ test("resumes an existing mission without creating a duplicate", async () => {
   const resumed = await resumeResponse.json();
   const afterResumeCount = await prisma.mission.count();
 
-  assert.equal(createResponse.status, 201);
+  assert.equal(createResponse.status, 200);
   assert.equal(resumeResponse.status, 200);
   assert.equal(resumed.accepted, true);
   assert.equal(resumed.missionId, created.missionId);
   assert.equal(resumed.status, "ACTIVE");
   assert.equal(
     resumed.currentActivity,
-    "Mission active; no Phase 3 research capability applies.",
+    "Mission active; the Phase 4 agent flow currently supports Travel missions.",
   );
   assert.deepEqual(resumed.results, []);
   assert.equal(afterCreateCount, beforeCount + 1);
@@ -106,12 +109,25 @@ test("runs real weather research through MCP and persists it across resume", asy
   });
   const created = await createResponse.json();
 
-  assert.equal(createResponse.status, 201);
+  assert.equal(createResponse.status, 200);
   assert.equal(created.accepted, true);
   assert.equal(created.status, "ACTIVE");
-  assert.match(created.currentActivity, /Weather in Tokyo, Japan:/);
+  assert.equal(
+    created.currentActivity,
+    "Research, recommendations, and cost analysis are ready for human review.",
+  );
   assert.equal(created.results.length, 1);
   assertWeatherResult(created.results[0]);
+  assert.equal(created.recommendations.length, 3);
+  assert.deepEqual(
+    created.recommendations.map((item: Record<string, any>) => item.rank),
+    [1, 2, 3],
+  );
+  assert.equal(created.costBreakdown.currency, "USD");
+  assert.equal(created.costBreakdown.lineItems.length, 4);
+  assert.equal(created.costBreakdown.total, 465);
+  assert.match(created.costBreakdown.disclaimer, /never pays, books/i);
+  assert.equal(created.notifications.length, 2);
 
   createdMissionIds.add(created.missionId);
   const firstPersistedCount = await prisma.missionResearchResult.count({
@@ -127,14 +143,38 @@ test("runs real weather research through MCP and persists it across resume", asy
 
   assert.equal(resumeResponse.status, 200);
   assert.equal(resumed.missionId, created.missionId);
-  assert.match(resumed.currentActivity, /Weather in Tokyo, Japan:/);
+  assert.equal(
+    resumed.currentActivity,
+    "Research, recommendations, and cost analysis are ready for human review.",
+  );
   assert.equal(resumed.results.length, 1);
   assertWeatherResult(resumed.results[0]);
+  assert.deepEqual(resumed.recommendations, created.recommendations);
+  assert.deepEqual(resumed.costBreakdown, created.costBreakdown);
+  assert.deepEqual(resumed.notifications, created.notifications);
 
   const secondPersistedCount = await prisma.missionResearchResult.count({
     where: { missionId: created.missionId },
   });
   assert.equal(secondPersistedCount, 1);
+  assert.equal(
+    await prisma.recommendation.count({
+      where: { missionId: created.missionId },
+    }),
+    3,
+  );
+  assert.equal(
+    await prisma.costEstimate.count({
+      where: { missionId: created.missionId },
+    }),
+    4,
+  );
+  assert.equal(
+    await prisma.missionNotification.count({
+      where: { missionId: created.missionId },
+    }),
+    2,
+  );
 });
 
 function invoke(body: Record<string, unknown>): Promise<Response> {
