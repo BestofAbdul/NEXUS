@@ -15,6 +15,8 @@ import {
   PrismaMissionRepository,
 } from "@nexus/mission-engine";
 
+process.env.DATABASE_URL ??= "file:./dev.db";
+
 const globalForPrisma = globalThis as typeof globalThis & {
   nexusPrisma?: PrismaClient;
 };

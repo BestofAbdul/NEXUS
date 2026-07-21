@@ -4,6 +4,8 @@ import {
   PrismaMissionRepository,
 } from "../src/index";
 
+process.env.DATABASE_URL ??= "file:./dev.db";
+
 const prisma = new PrismaClient();
 const service = new MissionService(new PrismaMissionRepository(prisma));
 

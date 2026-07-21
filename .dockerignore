@@ -1,0 +1,16 @@
+.git
+.github
+.next
+**/.next
+node_modules
+**/node_modules
+.pnpm-store
+coverage
+*.db
+*.db-journal
+*.sqlite
+*.sqlite-journal
+.env
+.env.*
+!.env.example
+agenthub

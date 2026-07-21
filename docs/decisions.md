@@ -238,3 +238,68 @@ reserve 1-2 business days in the submission schedule as an operational buffer.
 **Deferred real-world actions:** Do not install OnchainOS Skills, authenticate an
 Agentic Wallet, register/list the ASP, provision hosting, or configure a domain
 until the owner explicitly approves those actions.
+
+## 2026-07-21 - Railway deployment uses Docker, standalone Next.js, and a volume-backed SQLite database
+
+**Decision:** Deploy NEXUS from the repository-root `Dockerfile`. The build
+installs the complete pnpm workspace, generates Prisma Client, and produces the
+Next.js standalone server. At runtime, the container synchronizes the Prisma
+schema and starts the standalone server.
+
+**Rationale:** Explicit Docker stages make monorepo dependency installation and
+Prisma generation reproducible. Next.js standalone output keeps the application
+runtime smaller than copying the entire workspace. A small Prisma CLI install is
+retained in the runtime image because Railway volumes are attached only at
+runtime, so a new or existing SQLite database must be synchronized after the
+volume is available.
+
+**Database path:** Prisma now reads `DATABASE_URL`. Local commands default to
+`file:./dev.db`, which preserves
+`packages/mission-engine/prisma/dev.db`. Railway must set:
+
+```text
+DATABASE_URL=file:/app/packages/mission-engine/prisma/dev.db
+```
+
+The Railway volume mount path must be:
+
+```text
+/app/packages/mission-engine/prisma
+```
+
+The Docker `VOLUME` instruction documents the required mount point, but it does
+not create or attach a Railway volume. That account-bound action must be
+performed in Railway.
+
+**Railway configuration:** `railway.json` selects the root Dockerfile and checks
+`/api/health`. The Docker image owns the start command, so Railway should not
+override it. The health route verifies that Prisma can query SQLite, catching a
+missing volume, invalid `DATABASE_URL`, or unsynchronized database.
+For local inspection after `pnpm build`, `pnpm --filter @nexus/web
+start:standalone` runs the generated standalone server.
+
+**Operational constraint:** Run one Railway replica while using SQLite. A
+single writable volume and SQLite database are not a multi-replica persistence
+design.
+
+### Owner action required
+
+1. Sign in to Railway and create a new project from the
+   `BestofAbdul/NEXUS` GitHub repository.
+2. Confirm Railway detected the repository-root `Dockerfile`. Leave the root
+   directory at the repository root and do not add a custom start command.
+3. Open the NEXUS service, create a persistent volume, and mount it at
+   `/app/packages/mission-engine/prisma`.
+4. In the service Variables page, set
+   `DATABASE_URL=file:/app/packages/mission-engine/prisma/dev.db` and
+   `NODE_ENV=production`. Railway supplies `PORT`; do not hardcode it.
+5. Keep the service at one replica. Deploy and wait for `/api/health` to report
+   HTTP `200` with `{"status":"ok"}`.
+6. In Railway Networking, generate a Railway HTTPS domain for the first smoke
+   test. Verify `/api/mcp` is reachable at that domain.
+7. Add the final custom domain in Railway, then copy Railway's displayed DNS
+   record into the domain provider's DNS settings. Wait for Railway to show the
+   domain and TLS certificate as active.
+8. Only after the public HTTPS MCP endpoint works, proceed separately with the
+   owner-approved OnchainOS Skills installation, Agentic Wallet login, and OKX
+   ASP registration.
