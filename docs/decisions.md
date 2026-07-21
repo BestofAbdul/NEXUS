@@ -303,3 +303,27 @@ design.
 8. Only after the public HTTPS MCP endpoint works, proceed separately with the
    owner-approved OnchainOS Skills installation, Agentic Wallet login, and OKX
    ASP registration.
+
+## 2026-07-21 - Railway Railpack fallback after Metal Docker builder failure
+
+**Decision:** Keep the repository Dockerfile as the portable production image,
+but configure Railway to use Railpack with explicit root-workspace build and
+start commands.
+
+**Rationale:** Two Railway Docker deployments failed on July 21, 2026 before
+the Dockerfile executed. Railway recorded only Metal builder scheduling events
+and a generic `Failed to build an image` stage error. The source snapshot,
+Dockerfile path, volume, variables, and service manifest were all present.
+Railpack avoids the failing Docker builder while preserving the same verified
+steps: root pnpm workspace install, Prisma generation, Next.js build, runtime
+`prisma db push`, one replica, and the volume-backed `DATABASE_URL`.
+
+**Railway commands:**
+
+```text
+Build: pnpm --filter @nexus/mission-engine db:generate && pnpm build
+Start: pnpm --filter @nexus/mission-engine db:push && pnpm --filter @nexus/web start
+```
+
+The Dockerfile remains available for a later Railway Docker retry or another
+container host.
