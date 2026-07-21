@@ -356,3 +356,8 @@ production image therefore uses Node.js 22, which remains within the repository'
 fixed Node.js 20+ runtime decision. This replaces the earlier Node.js 20 image
 that could compile locally with a different pnpm runtime but could not execute
 the pinned package manager inside the container.
+
+The runtime stage also installs OpenSSL explicitly. The first successful Railway
+start showed Prisma falling back to an assumed OpenSSL version because the slim
+base image did not provide the library metadata. SQLite queries worked, but the
+dependency is installed to remove that native-runtime ambiguity.

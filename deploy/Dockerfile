@@ -37,7 +37,10 @@ ENV DATABASE_URL="file:/app/packages/mission-engine/prisma/dev.db"
 
 WORKDIR /app
 
-RUN npm install --global prisma@6.19.1 \
+RUN apt-get update \
+  && apt-get install --yes --no-install-recommends openssl \
+  && rm -rf /var/lib/apt/lists/* \
+  && npm install --global prisma@6.19.1 \
   && npm cache clean --force
 
 COPY --from=builder /app/apps/web/.next/standalone ./
