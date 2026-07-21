@@ -286,8 +286,9 @@ design.
 
 Railway project, service, production variables, one-replica configuration, and
 the 500 MB persistent volume are provisioned. The volume is mounted at
-`/app/packages/mission-engine/prisma`, and the service is pinned to the immutable
-GHCR image built from commit `7c5a1c9`.
+`/app/packages/mission-engine/prisma`. On July 21, 2026, the service was updated
+to the immutable GHCR image built from commit `39ec2ac`, which adds the
+interactive Phase 4.5 Mission Control.
 
 The production endpoints are:
 
@@ -301,6 +302,12 @@ Deployment `c76d0af2-45a2-4fce-aa6e-1fa43ee1555d` reached `SUCCESS`. Live smoke
 tests confirmed health, real weather research, recommendations, cost analysis,
 mission resumption without duplication, persistence across container restarts,
 and MCP invocation through the official TypeScript SDK.
+
+Phase 4.5 deployment `5c1fe6f6-bf82-41af-bf12-aa01da5b23bf` also reached
+`SUCCESS`. A browser-driven production test created mission
+`cmrute46o0000n001oyex34j9`, rendered its real weather result, three persisted
+recommendations, and `$465` cost breakdown, then resumed the same mission ID
+without duplication.
 
 ### Remaining owner-controlled actions
 
