@@ -361,3 +361,10 @@ The runtime stage also installs OpenSSL explicitly. The first successful Railway
 start showed Prisma falling back to an assumed OpenSSL version because the slim
 base image did not provide the library metadata. SQLite queries worked, but the
 dependency is installed to remove that native-runtime ambiguity.
+
+**Prisma engine correction:** OpenSSL must be present in both the builder and
+runtime stages. Installing it only at runtime caused Prisma Client to be
+generated for Debian OpenSSL 1.1 during the build, while Railway correctly
+detected Debian OpenSSL 3 at runtime and rejected the mismatched query engine.
+The base build stage now installs OpenSSL before `prisma generate`, ensuring the
+generated engine matches the production runtime.
