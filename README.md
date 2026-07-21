@@ -47,9 +47,17 @@ available, and asks only questions that materially affect the result.
 }
 ```
 
-The final OKX.AI authentication, manifest, listing, and invocation formats will be
-implemented only after verification against the current official ASP
-documentation.
+The public MCP service is live at:
+
+```text
+https://nexus-production-40fb.up.railway.app/api/mcp
+```
+
+The REST compatibility endpoint is:
+
+```text
+https://nexus-production-40fb.up.railway.app/api/a2mcp/mission
+```
 
 ## What NEXUS Does
 
@@ -124,6 +132,9 @@ Phase 4 is complete:
 - verified free OKX.AI A2MCP behavior with direct HTTP `200`
 - outward-facing MCP Streamable HTTP `nexus_mission` tool
 - documented marketplace identity, validation, review, and activation gates
+- Railway production deployment with volume-backed SQLite persistence
+- public HTTPS health, REST, and MCP endpoints verified end to end
+- immutable production image published through GitHub Container Registry
 
 ## Local Development
 
@@ -143,9 +154,9 @@ fetches it through the Mission Engine.
 ## Hackathon
 
 NEXUS is being developed for the **OKX.AI Genesis Hackathon** as an Agent Service
-Provider. NEXUS implements the verified free endpoint behavior; public listing
-still requires the owner-controlled deployment, Agentic Wallet registration,
-review, and activation steps recorded in `docs/decisions.md`.
+Provider. The free A2MCP service is deployed and verified. Marketplace
+registration, review, and activation remain pending through the official
+Agentic Wallet workflow recorded in `docs/decisions.md`.
 
 ## License
 

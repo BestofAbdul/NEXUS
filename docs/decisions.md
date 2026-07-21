@@ -282,27 +282,33 @@ start:standalone` runs the generated standalone server.
 single writable volume and SQLite database are not a multi-replica persistence
 design.
 
-### Owner action required
+### Deployment status
 
-1. Sign in to Railway and create a new project from the
-   `BestofAbdul/NEXUS` GitHub repository.
-2. Confirm Railway loaded `railway.json`. Leave the root directory at the
-   repository root.
-3. Open the NEXUS service, create a persistent volume, and mount it at
-   `/app/packages/mission-engine/prisma`.
-4. In the service Variables page, set
-   `DATABASE_URL=file:/app/packages/mission-engine/prisma/dev.db` and
-   `NODE_ENV=production`. Railway supplies `PORT`; do not hardcode it.
-5. Keep the service at one replica. Deploy and wait for `/api/health` to report
-   HTTP `200` with `{"status":"ok"}`.
-6. In Railway Networking, generate a Railway HTTPS domain for the first smoke
-   test. Verify `/api/mcp` is reachable at that domain.
-7. Add the final custom domain in Railway, then copy Railway's displayed DNS
-   record into the domain provider's DNS settings. Wait for Railway to show the
-   domain and TLS certificate as active.
-8. Only after the public HTTPS MCP endpoint works, proceed separately with the
-   owner-approved OnchainOS Skills installation, Agentic Wallet login, and OKX
-   ASP registration.
+Railway project, service, production variables, one-replica configuration, and
+the 500 MB persistent volume are provisioned. The volume is mounted at
+`/app/packages/mission-engine/prisma`, and the service is pinned to the immutable
+GHCR image built from commit `7c5a1c9`.
+
+The production endpoints are:
+
+```text
+Health: https://nexus-production-40fb.up.railway.app/api/health
+REST:   https://nexus-production-40fb.up.railway.app/api/a2mcp/mission
+MCP:    https://nexus-production-40fb.up.railway.app/api/mcp
+```
+
+Deployment `c76d0af2-45a2-4fce-aa6e-1fa43ee1555d` reached `SUCCESS`. Live smoke
+tests confirmed health, real weather research, recommendations, cost analysis,
+mission resumption without duplication, persistence across container restarts,
+and MCP invocation through the official TypeScript SDK.
+
+### Remaining owner-controlled actions
+
+1. Complete the official Agentic Wallet login or consent prompt when presented.
+2. Confirm the final on-chain ASP registration card after reviewing its fields.
+3. Complete any OKX email, CAPTCHA, wallet-signature, or review confirmation.
+4. Optionally point a custom domain at Railway; the generated Railway HTTPS
+   domain is already public and suitable for endpoint validation.
 
 ## 2026-07-21 - Railway Railpack fallback after Metal Docker builder failure
 
