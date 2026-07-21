@@ -330,3 +330,22 @@ Start: pnpm --filter @nexus/mission-engine db:push && pnpm --filter @nexus/web s
 The portable image remains available with
 `docker build -f deploy/Dockerfile .` for a later Railway Docker retry or
 another container host.
+
+## 2026-07-21 - Publish a prebuilt image to bypass Railway Metal builder failures
+
+**Decision:** GitHub Actions builds `deploy/Dockerfile` and publishes immutable
+commit tags plus `ghcr.io/bestofabdul/nexus:latest` to GitHub Container
+Registry. Railway consumes that public image directly instead of building the
+repository.
+
+**Rationale:** Docker and Railpack deployments both failed before any project
+build command ran, including a local CLI source snapshot. Publishing the same
+portable image through GitHub Actions separates application build verification
+from the unavailable Railway Metal builder while retaining Railway for runtime,
+HTTPS networking, and the persistent SQLite volume.
+
+**Operational rule:** The GHCR package must be public so Railway can pull it
+without registry credentials. Railway must continue mounting
+`/app/packages/mission-engine/prisma`, setting the production `DATABASE_URL`,
+and running one replica. A deployment is complete only after Railway reports
+`SUCCESS` and the health, REST, and MCP endpoints pass live smoke tests.
