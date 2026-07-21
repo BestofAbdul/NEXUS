@@ -8,7 +8,9 @@ const monorepoRoot = path.resolve(
 );
 
 const nextConfig: NextConfig = {
-  output: "standalone",
+  // Windows blocks the symlinks used by standalone tracing in some OneDrive
+  // workspaces. Production builds run on Linux and still emit standalone output.
+  output: process.platform === "win32" ? undefined : "standalone",
   outputFileTracingRoot: monorepoRoot,
   transpilePackages: [
     "@nexus/agents",

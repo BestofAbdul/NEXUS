@@ -374,3 +374,24 @@ generated for Debian OpenSSL 1.1 during the build, while Railway correctly
 detected Debian OpenSSL 3 at runtime and rejected the mismatched query engine.
 The base build stage now installs OpenSSL before `prisma generate`, ensuring the
 generated engine matches the production runtime.
+
+## 2026-07-21 - Keep the operator UI as a thin API client
+
+**Decision:** Phase 4.5 Mission Control submits create and resume requests only
+through `POST /api/a2mcp/mission` and renders the returned contract. The browser
+does not import the Mission Engine, invoke MCP providers, calculate costs, or
+construct recommendations.
+
+**Rationale:** The public deployment needs an interactive demo surface without
+weakening the API-first ASP architecture. Keeping the page as a client of the
+same A2MCP application service ensures the REST endpoint, outward-facing MCP
+tool, and operator UI all use one persistent mission and orchestration path.
+Travel remains the fully demonstrated vertical slice; other mission intents can
+create persistent missions while their specialized agent flows are added later.
+
+**Build portability:** Next.js standalone tracing creates symlinks that Windows
+can reject inside a OneDrive workspace even after compilation succeeds. The web
+build uses Webpack consistently and emits standalone output on Linux (including
+the production container build), while local Windows builds skip standalone
+packaging. This preserves the smaller production image and makes root
+`pnpm build` verifiable on the development machine.
