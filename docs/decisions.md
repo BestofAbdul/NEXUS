@@ -241,7 +241,7 @@ until the owner explicitly approves those actions.
 
 ## 2026-07-21 - Railway deployment uses Docker, standalone Next.js, and a volume-backed SQLite database
 
-**Decision:** Deploy NEXUS from the repository-root `Dockerfile`. The build
+**Decision:** Keep a portable production image at `deploy/Dockerfile`. The build
 installs the complete pnpm workspace, generates Prisma Client, and produces the
 Next.js standalone server. At runtime, the container synchronizes the Prisma
 schema and starts the standalone server.
@@ -271,10 +271,10 @@ The Docker `VOLUME` instruction documents the required mount point, but it does
 not create or attach a Railway volume. That account-bound action must be
 performed in Railway.
 
-**Railway configuration:** `railway.json` selects the root Dockerfile and checks
-`/api/health`. The Docker image owns the start command, so Railway should not
-override it. The health route verifies that Prisma can query SQLite, catching a
-missing volume, invalid `DATABASE_URL`, or unsynchronized database.
+**Railway configuration:** Railway currently uses the Railpack commands recorded
+below and checks `/api/health`. The health route verifies that Prisma can query
+SQLite, catching a missing volume, invalid `DATABASE_URL`, or unsynchronized
+database.
 For local inspection after `pnpm build`, `pnpm --filter @nexus/web
 start:standalone` runs the generated standalone server.
 
@@ -286,8 +286,8 @@ design.
 
 1. Sign in to Railway and create a new project from the
    `BestofAbdul/NEXUS` GitHub repository.
-2. Confirm Railway detected the repository-root `Dockerfile`. Leave the root
-   directory at the repository root and do not add a custom start command.
+2. Confirm Railway loaded `railway.json`. Leave the root directory at the
+   repository root.
 3. Open the NEXUS service, create a persistent volume, and mount it at
    `/app/packages/mission-engine/prisma`.
 4. In the service Variables page, set
@@ -306,17 +306,19 @@ design.
 
 ## 2026-07-21 - Railway Railpack fallback after Metal Docker builder failure
 
-**Decision:** Keep the repository Dockerfile as the portable production image,
-but configure Railway to use Railpack with explicit root-workspace build and
-start commands.
+**Decision:** Keep `deploy/Dockerfile` as the portable production image, but
+configure Railway to use Railpack with explicit root-workspace build and start
+commands.
 
 **Rationale:** Two Railway Docker deployments failed on July 21, 2026 before
 the Dockerfile executed. Railway recorded only Metal builder scheduling events
 and a generic `Failed to build an image` stage error. The source snapshot,
 Dockerfile path, volume, variables, and service manifest were all present.
-Railpack avoids the failing Docker builder while preserving the same verified
-steps: root pnpm workspace install, Prisma generation, Next.js build, runtime
-`prisma db push`, one replica, and the volume-backed `DATABASE_URL`.
+Railway always auto-selected a root Dockerfile even when `builder` was
+`RAILPACK`, so the Dockerfile was moved to `deploy/Dockerfile`. Railpack then
+preserves the same verified steps: root pnpm workspace install, Prisma
+generation, Next.js build, runtime `prisma db push`, one replica, and the
+volume-backed `DATABASE_URL`.
 
 **Railway commands:**
 
@@ -325,5 +327,6 @@ Build: pnpm --filter @nexus/mission-engine db:generate && pnpm build
 Start: pnpm --filter @nexus/mission-engine db:push && pnpm --filter @nexus/web start
 ```
 
-The Dockerfile remains available for a later Railway Docker retry or another
-container host.
+The portable image remains available with
+`docker build -f deploy/Dockerfile .` for a later Railway Docker retry or
+another container host.
