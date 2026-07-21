@@ -349,3 +349,10 @@ without registry credentials. Railway must continue mounting
 `/app/packages/mission-engine/prisma`, setting the production `DATABASE_URL`,
 and running one replica. A deployment is complete only after Railway reports
 `SUCCESS` and the health, REST, and MCP endpoints pass live smoke tests.
+
+**Build correction:** The first GitHub Actions build showed that pnpm 11.9.0
+requires Node.js 22.13 or newer and uses the `node:sqlite` built-in. The
+production image therefore uses Node.js 22, which remains within the repository's
+fixed Node.js 20+ runtime decision. This replaces the earlier Node.js 20 image
+that could compile locally with a different pnpm runtime but could not execute
+the pinned package manager inside the container.
