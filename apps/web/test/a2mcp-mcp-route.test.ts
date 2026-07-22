@@ -46,6 +46,10 @@ test("exposes mission create and resume through Streamable HTTP MCP", async () =
       arguments: {
         goal: "Prepare for a senior engineering job search",
         missionType: "NEW_JOB",
+        context: {
+          targetRole: "Senior Platform Engineer",
+          preferences: "Remote-first, TypeScript, and infrastructure ownership",
+        },
       },
     });
     assert.equal(createdResult.isError, undefined);
@@ -53,9 +57,15 @@ test("exposes mission create and resume through Streamable HTTP MCP", async () =
     createdMissionIds.add(created.missionId);
 
     assert.equal(created.accepted, true);
-    assert.deepEqual(created.results, []);
-    assert.deepEqual(created.recommendations, []);
-    assert.equal(created.costBreakdown.total, 0);
+    assert.equal(created.results.length, 2);
+    assert.equal(created.recommendations.length, 3);
+    assert.equal(created.tasks.length, 3);
+    assert.ok(created.costBreakdown.total > 0);
+    assert.match(
+      JSON.stringify(created.recommendations),
+      /Senior Platform Engineer/,
+    );
+    assert.match(JSON.stringify(created.results), /Remote-first/);
 
     const missionCountAfterCreate = await prisma.mission.count();
     const resumedResult = await client.callTool({
@@ -74,19 +84,19 @@ test("exposes mission create and resume through Streamable HTTP MCP", async () =
       await prisma.missionResearchResult.count({
         where: { missionId: created.missionId },
       }),
-      0,
+      2,
     );
     assert.equal(
       await prisma.recommendation.count({
         where: { missionId: created.missionId },
       }),
-      0,
+      3,
     );
     assert.equal(
       await prisma.costEstimate.count({
         where: { missionId: created.missionId },
       }),
-      0,
+      4,
     );
   } finally {
     await client.close();
@@ -118,6 +128,7 @@ interface MissionToolResponse {
   results: unknown[];
   recommendations: unknown[];
   costBreakdown: { total: number };
+  tasks: unknown[];
 }
 
 function readStructuredMission(value: unknown): MissionToolResponse {

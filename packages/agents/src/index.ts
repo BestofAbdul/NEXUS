@@ -20,6 +20,7 @@ export interface Agent<TData = unknown> {
 }
 
 export * from "./mission-orchestrator";
+export * from "./mission-planner-agent";
 export * from "./research-agent";
 export * from "./recommendation-agent";
 export * from "./cost-analysis-agent";

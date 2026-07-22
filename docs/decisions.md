@@ -309,6 +309,27 @@ Phase 4.5 deployment `5c1fe6f6-bf82-41af-bf12-aa01da5b23bf` also reached
 recommendations, and `$465` cost breakdown, then resumed the same mission ID
 without duplication.
 
+## 2026-07-21 - Replace the Travel-only demo path with specialized mission flows
+
+**Decision:** All nine mission types now run the same orchestration stages behind
+mission-specific setup schemas and planning logic. The operator UI submits the
+user's free-form goal plus type-specific context; the Mission Planner persists
+its interpretation and next-action tasks, Recommendation and Cost Analysis
+agents use type-specific builders, and the response includes tasks.
+
+**External evidence:** Travel invokes live Open-Meteo weather plus OpenStreetMap
+nearby-place MCP tools. Other mission types invoke a Wikimedia knowledge-search
+MCP tool with a query assembled from the exact goal and submitted preferences.
+These sources provide real external evidence without pretending that Wikimedia
+is authoritative for legal, medical, financial, immigration, or contractual
+requirements; recommendations explicitly preserve human and professional
+verification.
+
+**Rationale:** Clickable cards with one generic form did not satisfy the mission
+operating-system boundary. Specialized setup and personalized persisted output
+let NEXUS respond to the actual problem while keeping one API, Mission Engine,
+and orchestrator as the source of truth.
+
 ### Remaining owner-controlled actions
 
 1. Complete the official Agentic Wallet login or consent prompt when presented.

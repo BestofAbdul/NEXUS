@@ -395,7 +395,8 @@ textarea:focus-visible {
   color: var(--muted);
 }
 
-.mission-form textarea,
+.goal-field textarea,
+.preference-field textarea,
 .mission-form input {
   width: 100%;
   border: 0;
@@ -404,13 +405,21 @@ textarea:focus-visible {
   background: transparent;
 }
 
-.mission-form textarea {
+.goal-field textarea {
   min-height: 136px;
   resize: vertical;
   font-family: "Bahnschrift", "Aptos Display", sans-serif;
   font-size: clamp(27px, 3.2vw, 44px);
   line-height: 1.08;
   letter-spacing: -0.04em;
+}
+
+.preference-field textarea {
+  min-height: 92px;
+  padding: 10px 0 13px;
+  resize: vertical;
+  font-size: 16px;
+  line-height: 1.55;
 }
 
 .mission-form input {
@@ -423,11 +432,15 @@ textarea:focus-visible {
   color: #a2aaa3;
 }
 
-.context-grid {
+.setup-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 24px;
   margin: 34px 0;
+}
+
+.preference-field {
+  grid-column: 1 / -1;
 }
 
 .form-error {
@@ -622,11 +635,125 @@ textarea:focus-visible {
   background: var(--moss-soft);
 }
 
+.research-list {
+  display: grid;
+  gap: 28px;
+}
+
 .research-result {
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 28px;
   align-items: center;
+}
+
+.research-result + .research-result {
+  padding-top: 28px;
+  border-top: 1px solid #9eaea0;
+}
+
+.plan-result,
+.places-result,
+.knowledge-result {
+  display: block;
+}
+
+.plan-result p,
+.places-result p,
+.knowledge-result p {
+  margin: 0 0 18px;
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.knowledge-list {
+  display: grid;
+  gap: 0;
+  margin-bottom: 22px;
+  border-top: 1px solid #9eaea0;
+}
+
+.knowledge-list > div {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 12px;
+  padding: 13px 0;
+  border-bottom: 1px solid #9eaea0;
+}
+
+.knowledge-list > div > span {
+  color: var(--signal);
+  font-family: "Cascadia Mono", "Consolas", monospace;
+  font-size: 10px;
+}
+
+.knowledge-list > div > div {
+  display: grid;
+  gap: 5px;
+}
+
+.knowledge-list strong {
+  font-size: 13px;
+}
+
+.knowledge-list small {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.focus-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.focus-list span {
+  padding: 7px 10px;
+  border: 1px solid #9eaea0;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.preference-list {
+  display: grid;
+  gap: 7px;
+  margin: 0 0 22px;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.place-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  margin: 0 0 22px;
+  background: #aeb9b0;
+  border: 1px solid #aeb9b0;
+}
+
+.place-list > div {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 5px 12px;
+  padding: 13px;
+  background: #e8eee8;
+}
+
+.place-list span {
+  grid-row: 1 / span 2;
+  color: var(--signal);
+  font-family: "Cascadia Mono", "Consolas", monospace;
+  font-size: 10px;
+}
+
+.place-list strong {
+  font-size: 13px;
+}
+
+.place-list small {
+  color: var(--muted);
 }
 
 .weather-reading {
@@ -695,6 +822,41 @@ textarea:focus-visible {
 .recommendation small {
   color: #7b857d;
   line-height: 1.4;
+}
+
+.task-list {
+  border-top: 1px solid var(--line);
+}
+
+.task-row {
+  display: grid;
+  grid-template-columns: 38px 1fr;
+  gap: 16px;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.task-row > span {
+  color: var(--signal);
+  font-family: "Cascadia Mono", "Consolas", monospace;
+  font-size: 11px;
+}
+
+.task-row > div {
+  display: grid;
+  gap: 7px;
+}
+
+.task-row strong {
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.task-row small {
+  color: var(--muted);
+  font-family: "Cascadia Mono", "Consolas", monospace;
+  font-size: 9px;
+  letter-spacing: 0.08em;
 }
 
 .cost-list {
@@ -862,8 +1024,12 @@ textarea:focus-visible {
   }
 
   .mission-grid,
-  .context-grid {
+  .setup-grid {
     grid-template-columns: 1fr;
+  }
+
+  .preference-field {
+    grid-column: 1;
   }
 
   .mission-card {
@@ -890,6 +1056,10 @@ textarea:focus-visible {
   }
 
   .research-result {
+    grid-template-columns: 1fr;
+  }
+
+  .place-list {
     grid-template-columns: 1fr;
   }
 

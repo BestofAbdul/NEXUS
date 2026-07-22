@@ -55,6 +55,7 @@ interface A2MCPMissionResponse {
   results: A2MCPMissionResult[];
   recommendations: A2MCPRecommendation[];
   costBreakdown: A2MCPCostBreakdown;
+  tasks: A2MCPTask[];
   notifications: A2MCPNotification[];
 }
 ```
@@ -62,11 +63,14 @@ interface A2MCPMissionResponse {
 Successful creation and resume both return HTTP `200`, as required for a free
 OKX.AI A2MCP service. Resume returns the same `missionId`.
 
-For Travel missions with a resolvable destination, NEXUS runs the Research
-Agent through the registered weather MCP provider. `currentActivity` summarizes
-real orchestration state and `results` contains the persisted provider output.
-Phase 4 then returns ranked `recommendations`, an informational
-`costBreakdown`, and persisted `notifications`:
+Every mission first runs the Mission Planner against the caller's exact `goal`
+and `context`, persists interpreted preferences and mission-specific tasks, then
+runs external research. Non-Travel missions query Wikimedia background topics
+through MCP. Travel missions additionally call live Open-Meteo weather and
+OpenStreetMap nearby-place tools. `currentActivity` summarizes real orchestration
+state and `results` contains the persisted provider outputs. Responses also
+return ranked `recommendations`, an informational `costBreakdown`, `tasks`, and
+persisted `notifications`:
 
 ```json
 {

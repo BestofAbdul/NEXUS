@@ -8,10 +8,14 @@ they do not own UI or persistence implementation details.
 
 The implemented flow includes:
 
-- `ResearchAgent`, which selects the weather capability and converts the MCP
-  result into mission research;
+- `MissionPlannerAgent`, which interprets each mission type, goal, and submitted
+  preference into focus areas and persisted next-action tasks;
+- `ResearchAgent`, which selects weather, nearby-place, or knowledge-search MCP
+  capabilities and converts provider output into mission evidence;
 - `MissionOrchestrator`, which runs research, persists results through the
   Mission Engine, and returns current activity to the A2MCP route;
-- `RecommendationAgent`, which turns persisted evidence into ranked actions;
-- `CostAnalysisAgent`, which creates informational budget line items only;
+- `RecommendationAgent`, which uses mission-specific logic and caller context
+  to produce ranked actions for all nine mission types;
+- `CostAnalysisAgent`, which creates type-aware informational budget line items
+  only;
 - `NotificationAgent`, which persists completed orchestration stages.

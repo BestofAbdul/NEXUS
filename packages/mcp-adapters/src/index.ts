@@ -18,4 +18,6 @@ export interface MCPProvider {
 }
 
 export * from "./provider-registry";
+export * from "./knowledge/wikimedia-knowledge-provider";
+export * from "./places/openstreetmap-places-provider";
 export * from "./weather/open-meteo-weather-provider";

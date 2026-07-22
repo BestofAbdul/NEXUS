@@ -94,6 +94,12 @@ function toResponse(
       disclaimer:
         "Informational estimate only. NEXUS never pays, books, or accesses financial accounts.",
     },
+    tasks: mission.tasks.map((task) => ({
+      ...task,
+      dueAt: task.dueAt?.toISOString() ?? null,
+      createdAt: task.createdAt.toISOString(),
+      updatedAt: task.updatedAt.toISOString(),
+    })),
     notifications: mission.notifications.map((notification) => ({
       ...notification,
       createdAt: notification.createdAt.toISOString(),

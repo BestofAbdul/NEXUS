@@ -158,6 +158,12 @@ export interface A2MCPNotification
   createdAt: string;
 }
 
+export interface A2MCPTask extends Omit<Task, "createdAt" | "updatedAt" | "dueAt"> {
+  dueAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface A2MCPMissionResponse {
   accepted: boolean;
   missionId: string;
@@ -168,5 +174,6 @@ export interface A2MCPMissionResponse {
   results: A2MCPMissionResult[];
   recommendations: A2MCPRecommendation[];
   costBreakdown: A2MCPCostBreakdown;
+  tasks: A2MCPTask[];
   notifications: A2MCPNotification[];
 }
