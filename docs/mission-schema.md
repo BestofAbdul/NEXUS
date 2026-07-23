@@ -21,9 +21,10 @@ DRAFT -> ACTIVE -> READY
 ```
 
 `DRAFT` means the record exists but has not started execution. `ACTIVE` means
-workflow execution is in progress or blocked on input/providers. `READY` means
-all required workflow tasks completed. A READY mission can return to ACTIVE only
-when new context or an explicit exploration action creates new work.
+workflow execution is running or waiting for required user input. `READY` means
+all currently runnable work reached a terminal state. A READY mission may still
+contain clearly reported `BLOCKED` or `FAILED` tasks when an optional provider
+is unavailable; a resume retries those tasks without duplicating the mission.
 
 ## Task
 
@@ -59,8 +60,9 @@ generation, user waits, lifecycle changes, and notes.
 ## MissionResearchResult
 
 An evidence record produced through an MCP/API provider. It belongs to a stable
-workflow task and stores provider ID, capability, summary, structured data,
-source URLs, retrieval time, and creation time. New results are upserted by
+workflow task and stores provider ID, capability, evidence-grounded summary,
+confidence score, structured data, source URLs, retrieval time, and creation
+time. New results are upserted by
 mission/task key so a resumed task refreshes evidence without duplication.
 
 Phase 3 persists live weather observations here, including Open-Meteo source
@@ -71,4 +73,6 @@ creating duplicate missions or results.
 Recommendations and cost estimates remain separate mission-owned records, but
 they can now be created only from persisted evidence. If comparable evidence or
 provider-backed prices are missing, the corresponding workflow task is BLOCKED
-and NEXUS returns no template recommendation or assumed budget.
+and NEXUS returns no template recommendation or assumed budget. The A2MCP
+execution summary lists completed, blocked, and failed tasks; evidence and
+confidence; and pending actions required to unlock unavailable capabilities.

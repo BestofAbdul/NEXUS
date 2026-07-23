@@ -693,6 +693,27 @@ function MissionOutput({
         <span style={{ width: `${mission.progress}%` }} />
       </div>
 
+      <div className="execution-overview">
+        <div>
+          <span>COMPLETED</span>
+          <strong>{mission.executionSummary.completedTasks.length}</strong>
+        </div>
+        <div>
+          <span>BLOCKED</span>
+          <strong>{mission.executionSummary.blockedTasks.length}</strong>
+        </div>
+        <div>
+          <span>EVIDENCE</span>
+          <strong>{mission.executionSummary.evidenceCollected.length}</strong>
+        </div>
+        <div>
+          <span>CONFIDENCE</span>
+          <strong>
+            {formatConfidence(mission.executionSummary.averageConfidence)}
+          </strong>
+        </div>
+      </div>
+
       {mission.pendingQuestions.length > 0 && (
         <div className="pending-panel">
           <span>NEXUS NEEDS THESE ANSWERS</span>
@@ -702,6 +723,17 @@ function MissionOutput({
             ))}
           </div>
           <a href="#launch-mission">Add the details above, then resume</a>
+        </div>
+      )}
+
+      {mission.executionSummary.pendingActions.length > 0 && (
+        <div className="pending-actions-panel">
+          <span>PENDING ACTIONS TO UNLOCK MORE</span>
+          <ul>
+            {mission.executionSummary.pendingActions.map((action) => (
+              <li key={action}>{action}</li>
+            ))}
+          </ul>
         </div>
       )}
 
@@ -1091,7 +1123,9 @@ function ResearchResult({ result }: { result: A2MCPMissionResult }) {
 function SourceLine({ result }: { result: A2MCPMissionResult }) {
   return (
     <div className="source-line">
-      <span>{result.providerId}</span>
+      <span>
+        {result.providerId} / {formatConfidence(result.confidenceScore)} confidence
+      </span>
       <time>{formatTime(result.createdAt)}</time>
     </div>
   );
@@ -1237,4 +1271,8 @@ function formatTime(value: string) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function formatConfidence(value: number | null) {
+  return value === null ? "N/A" : `${Math.round(value * 100)}%`;
 }

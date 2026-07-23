@@ -9,6 +9,7 @@ export interface MissionPlanData {
   providerId: "nexus-mission-planner";
   capability: "mission-plan";
   summary: string;
+  confidenceScore: number;
   data: {
     missionType: MissionType;
     goal: string;
@@ -39,6 +40,7 @@ export class MissionPlannerAgent implements Agent<MissionPlanData> {
         providerId: "nexus-mission-planner",
         capability: "mission-plan",
         summary,
+        confidenceScore: 1,
         data: {
           missionType: input.mission.type,
           goal: input.mission.goal,

@@ -16,6 +16,7 @@ export interface ResearchData {
   providerId: string;
   capability: string;
   summary: string;
+  confidenceScore: number;
   data: Record<string, unknown>;
   sourceUrls: string[];
   retrievedAt: Date;
@@ -52,6 +53,12 @@ export class ResearchAgent implements Agent<ResearchData> {
   private async runAirports(
     input: AgentInput,
   ): Promise<AgentResult<ResearchData>> {
+    if (this.providers.resolveAll("airports").length === 0) {
+      return {
+        status: "BLOCKED",
+        summary: "No airport provider configured",
+      };
+    }
     const origin = answer(input, "origin") ?? answer(input, "movingFrom");
     const destination = answer(input, "destination");
     if (!origin || !destination) {
@@ -77,12 +84,19 @@ export class ResearchAgent implements Agent<ResearchData> {
       `Resolved ${origin} to ${route.origin.name} (${route.origin.iataCode}) and ${destination} to ${route.destination.name} (${route.destination.iataCode}).`,
       route,
       [],
+      0.95,
     );
   }
 
   private async runFlights(
     input: AgentInput,
   ): Promise<AgentResult<ResearchData>> {
+    if (this.providers.resolveAll("flights").length === 0) {
+      return {
+        status: "BLOCKED",
+        summary: "No flight provider configured",
+      };
+    }
     const route = resultData(input, "airports");
     const origin = route?.origin;
     const destination = route?.destination;
@@ -128,6 +142,7 @@ export class ResearchAgent implements Agent<ResearchData> {
         : "The live flight provider returned no offers for the selected route and date.",
       search,
       search.offers.map((offer) => offer.bookingSearchUrl),
+      0.95,
     );
   }
 
@@ -158,12 +173,18 @@ export class ResearchAgent implements Agent<ResearchData> {
         : `${forecast.location}: ${forecast.note}`;
     return completed(response.providerId, "weather", summary, forecast, [
       "https://open-meteo.com/",
-    ]);
+    ], forecast.status === "FORECAST" ? 0.95 : 0.9);
   }
 
   private async runHotels(
     input: AgentInput,
   ): Promise<AgentResult<ResearchData>> {
+    if (this.providers.resolveAll("hotels").length === 0) {
+      return {
+        status: "BLOCKED",
+        summary: "No hotel provider configured",
+      };
+    }
     const route = resultData(input, "airports");
     const destination = route?.destination;
     if (!isAirport(destination)) {
@@ -205,6 +226,7 @@ export class ResearchAgent implements Agent<ResearchData> {
         : "The live hotel provider returned no offers for the selected stay.",
       search,
       search.offers.map((offer) => offer.bookingSearchUrl),
+      0.95,
     );
   }
 
@@ -241,6 +263,7 @@ export class ResearchAgent implements Agent<ResearchData> {
         location: weather?.location,
       },
       ["https://www.openstreetmap.org/"],
+      0.85,
     );
   }
 
@@ -250,10 +273,16 @@ export class ResearchAgent implements Agent<ResearchData> {
     const route = resultData(input, "airports");
     const origin = route?.origin;
     const destination = route?.destination;
-    if (!isAirport(origin) || !isAirport(destination)) {
+    const baseCountry = isAirport(origin)
+      ? origin.countryName
+      : answer(input, "origin") ?? answer(input, "movingFrom");
+    const quoteCountry = isAirport(destination)
+      ? destination.countryName
+      : answer(input, "destination") ?? answer(input, "location");
+    if (!baseCountry || !quoteCountry) {
       return {
         status: "BLOCKED",
-        summary: "Currency research is waiting for resolved route countries.",
+        summary: "Currency research requires origin and destination countries.",
       };
     }
     const response = await this.invokeFirst("currency", {
@@ -262,8 +291,8 @@ export class ResearchAgent implements Agent<ResearchData> {
       input: {
         base: answer(input, "homeCurrency"),
         quote: answer(input, "destinationCurrency"),
-        baseCountry: origin.countryName,
-        quoteCountry: destination.countryName,
+        baseCountry,
+        quoteCountry,
       },
     });
     if (!response.ok || !response.data) return blockedOrFailed(response);
@@ -274,6 +303,7 @@ export class ResearchAgent implements Agent<ResearchData> {
       `On ${currency.date}, 1 ${currency.base} equalled ${currency.rate} ${currency.quote}.`,
       currency as unknown as Record<string, unknown>,
       [currency.sourceUrl, "https://restcountries.com/"],
+      0.95,
     );
   }
 
@@ -284,11 +314,7 @@ export class ResearchAgent implements Agent<ResearchData> {
     const latitude = weather?.latitude;
     const longitude = weather?.longitude;
     if (typeof latitude !== "number" || typeof longitude !== "number") {
-      return {
-        status: "BLOCKED",
-        summary:
-          "Transportation research is waiting for resolved destination coordinates.",
-      };
+      return this.runEvidenceSearch(input, "transportation");
     }
     const response = await this.invokeFirst("transportation", {
       capability: "transportation",
@@ -308,6 +334,7 @@ export class ResearchAgent implements Agent<ResearchData> {
         : "No nearby public-transport points were returned.",
       places as unknown as Record<string, unknown>,
       ["https://www.openstreetmap.org/"],
+      0.85,
     );
   }
 
@@ -336,6 +363,10 @@ export class ResearchAgent implements Agent<ResearchData> {
       if (response.ok && response.data) {
         const data = response.data as EvidenceSearch | KnowledgeSearch;
         const items = Array.isArray(data.items) ? data.items : [];
+        const evidenceAnswer =
+          "answer" in data && typeof data.answer === "string"
+            ? data.answer.trim()
+            : "";
         const sourceUrls = items
           .map((item) =>
             typeof item === "object" &&
@@ -348,11 +379,13 @@ export class ResearchAgent implements Agent<ResearchData> {
         return completed(
           provider.id,
           capability,
-          items.length > 0
-            ? `Found ${items.length} current source(s) for ${capability}.`
-            : `No current sources were returned for ${capability}.`,
+          evidenceAnswer ||
+            (items.length > 0
+              ? extractiveEvidenceSummary(items, capability)
+              : `No current sources were returned for ${capability}.`),
           data as unknown as Record<string, unknown>,
           sourceUrls,
+          evidenceConfidence(items),
         );
       }
       lastError = response.error ?? lastError;
@@ -405,9 +438,13 @@ export class ResearchAgent implements Agent<ResearchData> {
     for (const provider of providers) {
       const response = await provider.invoke(request);
       last = { ...response, providerId: provider.id };
-      if (response.ok || response.metadata?.serviceState !== "NOT_CONFIGURED") {
+      if (response.ok) {
         return last;
       }
+      const shouldTryNext =
+        response.metadata?.serviceState === "NOT_CONFIGURED" ||
+        response.error?.startsWith("Unsupported ");
+      if (!shouldTryNext) return last;
     }
     return last;
   }
@@ -433,6 +470,7 @@ function completed(
   summary: string,
   data: Record<string, unknown>,
   sourceUrls: string[],
+  confidenceScore: number,
 ): AgentResult<ResearchData> {
   return {
     status: "COMPLETED",
@@ -441,11 +479,42 @@ function completed(
       providerId,
       capability,
       summary,
+      confidenceScore,
       data,
       sourceUrls: [...new Set(sourceUrls)],
       retrievedAt: new Date(),
     },
   };
+}
+
+function extractiveEvidenceSummary(
+  items: Array<Record<string, unknown>>,
+  capability: string,
+): string {
+  const excerpts = items
+    .map((item) =>
+      typeof item.excerpt === "string" ? item.excerpt.trim() : "",
+    )
+    .filter(Boolean)
+    .slice(0, 3);
+  return excerpts.length > 0
+    ? excerpts.join(" ")
+    : `Found ${items.length} current source(s) for ${capability}.`;
+}
+
+function evidenceConfidence(items: Array<Record<string, unknown>>): number {
+  const scores = items
+    .map((item) => item.score)
+    .filter((score): score is number => typeof score === "number")
+    .map((score) => Math.min(1, Math.max(0, score)));
+  if (scores.length === 0) return 0.6;
+  return roundConfidence(
+    scores.reduce((total, score) => total + score, 0) / scores.length,
+  );
+}
+
+function roundConfidence(value: number): number {
+  return Math.round(value * 100) / 100;
 }
 
 function blockedOrFailed(response: {

@@ -23,13 +23,9 @@ export function assertMissionTransition(
 }
 
 export function calculateMissionProgress(
-  status: MissionStatus,
+  _status: MissionStatus,
   tasks: readonly Pick<Task, "status">[],
 ): number {
-  if (status === "READY") {
-    return 100;
-  }
-
   if (tasks.length === 0) {
     return 0;
   }

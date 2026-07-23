@@ -12,12 +12,13 @@ The implemented flow includes:
   Property, Job, Event, Medical, Freight, and Custom capability sequences;
 - `MissionPlannerAgent`, which turns the selected definition into durable,
   ordered workflow tasks;
-- `ResearchAgent`, which selects weather, nearby-place, or knowledge-search MCP
-  capabilities plus airport resolution and flight offers, and converts provider
-  output into mission evidence;
+- `ResearchAgent`, which resolves providers by capability, uses Tavily as the
+  default evidence source for broad research, and treats flight, airport, and
+  hotel providers as optional capabilities;
 - `MissionOrchestrator`, which schedules and resumes tasks, persists timeline
   operations, stores task-owned evidence, retries blocked providers, and moves a
-  mission to READY only when required tasks complete;
+  mission to READY when every task has reached a terminal state, including
+  explicitly blocked capabilities that can be unlocked later;
 - `RecommendationAgent`, which ranks comparable persisted evidence and blocks
   when no evidence exists;
 - `CostAnalysisAgent`, which extracts only provider-returned prices and never

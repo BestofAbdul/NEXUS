@@ -15,12 +15,14 @@ const evidenceSearchShape = {
   source: z.literal("Tavily"),
   query: z.string(),
   capability: z.string(),
+  answer: z.string().nullable(),
   items: z.array(z.object(evidenceItemShape)),
   searchedAt: z.string(),
 };
 
 const evidenceSearchSchema = z.object(evidenceSearchShape);
 const tavilyResponseSchema = z.object({
+  answer: z.string().nullable().optional(),
   results: z.array(
     z.object({
       title: z.string(),
@@ -60,6 +62,10 @@ const searchableCapabilities = [
   "recovery",
   "freight",
   "customs",
+  "government-documents",
+  "relocation",
+  "events",
+  "transportation",
   "knowledge",
 ] as const;
 
@@ -182,10 +188,12 @@ function createServer(apiKey: string): McpServer {
           query,
           search_depth: "advanced",
           max_results: 8,
-          include_answer: false,
+          include_answer: "advanced",
           include_raw_content: false,
           topic: "general",
-          ...(officialOnly ? { include_domains: officialDomainHints(query) } : {}),
+          ...(officialOnly && officialDomainHints(query).length > 0
+            ? { include_domains: officialDomainHints(query) }
+            : {}),
         }),
         signal: AbortSignal.timeout(25_000),
       });
@@ -199,6 +207,7 @@ function createServer(apiKey: string): McpServer {
         source: "Tavily",
         query,
         capability,
+        answer: payload.answer?.trim() || null,
         searchedAt: new Date().toISOString(),
         items: payload.results.map((item) => ({
           title: item.title,

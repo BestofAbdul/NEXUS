@@ -53,6 +53,7 @@ model MissionResearchResult {
   capability String
   taskKey    String?
   summary    String
+  confidenceScore Float @default(0.5)
   dataJson   String
   sourceUrlsJson String @default("[]")
   retrievedAt DateTime @default(now())

@@ -15,6 +15,7 @@ import {
   WikimediaKnowledgeProvider,
   OpenStreetMapPlacesProvider,
   TavilyEvidenceProvider,
+  type MCPProvider,
 } from "@nexus/mcp-adapters";
 import {
   MissionService,
@@ -41,14 +42,22 @@ export const missionService = new MissionService(
   new PrismaMissionRepository(prisma),
 );
 
-const mcpProviders = new MCPProviderRegistry([
-  new AmadeusFlightProvider(),
+const configuredProviders: MCPProvider[] = [
   new TavilyEvidenceProvider(),
   new FrankfurterCurrencyProvider(),
   new OpenMeteoWeatherProvider(),
   new WikimediaKnowledgeProvider(),
   new OpenStreetMapPlacesProvider(),
-]);
+];
+
+if (
+  process.env.AMADEUS_CLIENT_ID?.trim() &&
+  process.env.AMADEUS_CLIENT_SECRET?.trim()
+) {
+  configuredProviders.push(new AmadeusFlightProvider());
+}
+
+const mcpProviders = new MCPProviderRegistry(configuredProviders);
 const researchAgent = new ResearchAgent(mcpProviders);
 
 export const missionOrchestrator = new MissionOrchestrator(

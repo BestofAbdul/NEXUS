@@ -110,6 +110,7 @@ export interface MissionResearchResult {
   capability: string;
   taskKey: string | null;
   summary: string;
+  confidenceScore: number;
   data: Record<string, unknown>;
   sourceUrls: string[];
   retrievedAt: Date;
@@ -152,6 +153,7 @@ export interface CreateMissionResearchResultInput {
   capability: string;
   taskKey?: string;
   summary: string;
+  confidenceScore: number;
   data: Record<string, unknown>;
   sourceUrls?: string[];
   retrievedAt?: Date;
@@ -251,6 +253,34 @@ export interface A2MCPTimelineEntry
   occurredAt: string;
 }
 
+export interface A2MCPExecutionTaskSummary {
+  key: string;
+  title: string;
+  capability: string;
+}
+
+export interface A2MCPBlockedTaskSummary
+  extends A2MCPExecutionTaskSummary {
+  reason: string;
+}
+
+export interface A2MCPEvidenceSummary {
+  capability: string;
+  providerId: string;
+  summary: string;
+  confidenceScore: number;
+  sourceUrls: string[];
+}
+
+export interface A2MCPExecutionSummary {
+  completedTasks: A2MCPExecutionTaskSummary[];
+  blockedTasks: A2MCPBlockedTaskSummary[];
+  failedTasks: A2MCPBlockedTaskSummary[];
+  evidenceCollected: A2MCPEvidenceSummary[];
+  averageConfidence: number | null;
+  pendingActions: string[];
+}
+
 export interface A2MCPMissionResponse {
   accepted: boolean;
   missionId: string;
@@ -265,4 +295,5 @@ export interface A2MCPMissionResponse {
   tasks: A2MCPTask[];
   notifications: A2MCPNotification[];
   timeline: A2MCPTimelineEntry[];
+  executionSummary: A2MCPExecutionSummary;
 }

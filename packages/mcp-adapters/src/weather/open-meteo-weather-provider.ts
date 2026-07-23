@@ -173,14 +173,15 @@ async function fetchWeatherForecast(
   location: string,
   requestedDate: string,
 ): Promise<WeatherForecast> {
+  const place = await resolveLocation(location);
   const daysAway = differenceInUtcDays(todayIso(), requestedDate);
   if (daysAway < 0 || daysAway >= FORECAST_HORIZON_DAYS) {
     return {
       source: "Open-Meteo",
-      location,
-      country: "Unknown",
-      latitude: null,
-      longitude: null,
+      location: place.name,
+      country: place.country,
+      latitude: place.latitude,
+      longitude: place.longitude,
       timezone: "unavailable",
       requestedDate,
       status: "OUT_OF_RANGE",
@@ -191,22 +192,6 @@ async function fetchWeatherForecast(
           ? "The selected travel date is in the past, so no forecast was requested."
           : `The selected date is outside Open-Meteo's ${FORECAST_HORIZON_DAYS}-day forecast horizon. NEXUS will not substitute current weather.`,
     };
-  }
-
-  const geocodingUrl = new URL(
-    "https://geocoding-api.open-meteo.com/v1/search",
-  );
-  geocodingUrl.searchParams.set("name", location);
-  geocodingUrl.searchParams.set("count", "1");
-  geocodingUrl.searchParams.set("language", "en");
-  geocodingUrl.searchParams.set("format", "json");
-
-  const geocoding = geocodingResponseSchema.parse(
-    await fetchJsonWithRetry(geocodingUrl),
-  );
-  const place = geocoding.results?.[0];
-  if (!place) {
-    throw new Error(`Open-Meteo could not resolve location: ${location}`);
   }
 
   const forecastUrl = new URL("https://api.open-meteo.com/v1/forecast");
@@ -249,6 +234,30 @@ async function fetchWeatherForecast(
     },
     note: null,
   };
+}
+
+async function resolveLocation(location: string): Promise<{
+  name: string;
+  country: string;
+  latitude: number;
+  longitude: number;
+}> {
+  const geocodingUrl = new URL(
+    "https://geocoding-api.open-meteo.com/v1/search",
+  );
+  geocodingUrl.searchParams.set("name", location);
+  geocodingUrl.searchParams.set("count", "1");
+  geocodingUrl.searchParams.set("language", "en");
+  geocodingUrl.searchParams.set("format", "json");
+
+  const geocoding = geocodingResponseSchema.parse(
+    await fetchJsonWithRetry(geocodingUrl),
+  );
+  const place = geocoding.results?.[0];
+  if (!place) {
+    throw new Error(`Open-Meteo could not resolve location: ${location}`);
+  }
+  return place;
 }
 
 async function fetchJsonWithRetry(url: URL): Promise<unknown> {

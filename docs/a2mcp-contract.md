@@ -66,6 +66,14 @@ interface A2MCPMissionResponse {
   tasks: A2MCPTask[];
   notifications: A2MCPNotification[];
   timeline: A2MCPTimelineEntry[];
+  executionSummary: {
+    completedTasks: A2MCPExecutionTaskSummary[];
+    blockedTasks: A2MCPBlockedTaskSummary[];
+    failedTasks: A2MCPBlockedTaskSummary[];
+    evidenceCollected: A2MCPEvidenceSummary[];
+    averageConfidence: number | null;
+    pendingActions: string[];
+  };
 }
 ```
 
@@ -75,13 +83,17 @@ OKX.AI A2MCP service. Resume returns the same `missionId`.
 Once blocking facts are present, every mission creates its mission-specific
 ordered workflow and schedules durable tasks. Each task moves through
 `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `FAILED`, or `COMPLETED`; progress is
-computed from completed tasks. Travel resolves airports and searches flight and
-hotel offers through Amadeus, requests Open-Meteo weather for the selected date,
-uses OpenStreetMap for nearby places and transportation, and uses Frankfurter
-plus REST Countries for currency evidence. Broad current research capabilities
-use Tavily and preserve returned source URLs. If Amadeus
-credentials are absent, NEXUS returns a machine-readable
-blocked task and no airfare instead of a fabricated price.
+computed from completed tasks. Travel requests Open-Meteo weather for the
+selected date, uses OpenStreetMap for nearby places and transportation, and uses
+Frankfurter plus location/country resolution for currency evidence. Broad
+research capabilities use Tavily by default and preserve its synthesized answer,
+source excerpts, URLs, and confidence score.
+
+Amadeus is an optional provider for `airports`, `flights`, and `hotels`; it is
+registered only when both credentials exist. If no flight provider is
+registered, the flight task is `BLOCKED` with the exact reason
+`No flight provider configured`. Independent research continues, and the mission
+can reach `READY` with partial progress plus explicit pending actions.
 Dates outside Open-Meteo's forecast horizon return `OUT_OF_RANGE`; current
 weather is never substituted for a future date.
 
@@ -138,6 +150,11 @@ exploration action change, NEXUS reopens a READY mission, clears stale derived
 output, recreates the same workflow, and reruns research for the same
 `missionId`. A plain resume retries blocked tasks and upserts task-owned evidence
 without duplicating the mission, tasks, or results.
+
+`READY` is a terminal execution state, not a claim that every optional provider
+was available. The response's `executionSummary` is the canonical compact view
+of completed work, blocked or failed capabilities, collected evidence,
+confidence, and caller actions that can unlock more work.
 
 Invalid caller input returns HTTP `400`:
 

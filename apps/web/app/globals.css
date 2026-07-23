@@ -637,6 +637,57 @@ textarea:focus-visible {
   border-left: 1px solid var(--line);
 }
 
+.execution-overview {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+}
+
+.execution-overview > div {
+  display: grid;
+  gap: 8px;
+  padding: 18px 22px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: rgba(250, 249, 244, 0.72);
+}
+
+.execution-overview span,
+.pending-actions-panel > span {
+  color: var(--signal);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.execution-overview strong {
+  font-family: "Bahnschrift", "Aptos Display", sans-serif;
+  font-size: 30px;
+  font-weight: 540;
+}
+
+.pending-actions-panel {
+  display: grid;
+  grid-template-columns: 190px 1fr;
+  gap: 24px;
+  padding: 22px 28px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+  background: #f3eadf;
+}
+
+.pending-actions-panel ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 18px;
+  color: #7d4b2b;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .output-panel {
   min-height: 320px;
   padding: 28px;
@@ -904,6 +955,16 @@ textarea:focus-visible {
   gap: 16px;
   color: var(--muted);
   font-size: 9px;
+}
+
+@media (max-width: 720px) {
+  .execution-overview {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .pending-actions-panel {
+    grid-template-columns: 1fr;
+  }
 }
 
 .recommendation-list {

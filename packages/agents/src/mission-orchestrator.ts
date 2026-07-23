@@ -68,12 +68,23 @@ export class MissionOrchestrator {
     const pending = workingMission.tasks.filter(
       (task) => task.required && task.status !== "COMPLETED",
     );
+    const blockedCount = workingMission.tasks.filter(
+      (task) => task.status === "BLOCKED",
+    ).length;
+    const failedCount = workingMission.tasks.filter(
+      (task) => task.status === "FAILED",
+    ).length;
+    const completedCount = workingMission.tasks.filter(
+      (task) => task.status === "COMPLETED",
+    ).length;
     const next = pending[0];
     return {
       mission: workingMission,
       currentActivity:
         workingMission.status === "READY"
-          ? `${humanize(workingMission.type)} mission is ready from verified evidence.`
+          ? blockedCount + failedCount === 0
+            ? `${humanize(workingMission.type)} mission is ready from verified evidence.`
+            : `${humanize(workingMission.type)} mission is ready with ${completedCount} completed, ${blockedCount} blocked, and ${failedCount} failed task(s).`
           : next?.blockedReason
             ? `${next.title}: ${next.blockedReason}`
             : next
@@ -96,6 +107,7 @@ export class MissionOrchestrator {
       capability: plan.data.capability,
       taskKey: "workflow-plan",
       summary: plan.data.summary,
+      confidenceScore: plan.data.confidenceScore,
       data: plan.data.data,
       sourceUrls: [],
     });
@@ -163,23 +175,6 @@ export class MissionOrchestrator {
   private async executeRecommendationTask(mission: Mission): Promise<Mission> {
     const task = findTask(mission, "recommendations");
     if (!task || task.status === "COMPLETED") return mission;
-    const incompleteRequiredResearch = mission.tasks.filter(
-      (candidate) =>
-        candidate.required &&
-        !internalCapabilities.has(candidate.capability) &&
-        candidate.status !== "COMPLETED",
-    );
-    if (incompleteRequiredResearch.length > 0) {
-      await this.blockTask(
-        mission.id,
-        task,
-        `Waiting for required evidence: ${incompleteRequiredResearch
-          .map((candidate) => candidate.title)
-          .join(", ")}.`,
-      );
-      return this.requireUpdatedMission(mission.id);
-    }
-
     await this.startTask(mission, task);
     const currentMission = await this.requireUpdatedMission(mission.id);
     const result = await this.recommendationAgent.run({
@@ -201,17 +196,26 @@ export class MissionOrchestrator {
   }
 
   private async finalizeMission(mission: Mission): Promise<Mission> {
-    const allRequiredComplete =
+    const allTasksTerminal =
       mission.tasks.length > 0 &&
-      mission.tasks
-        .filter((task) => task.required)
-        .every((task) => task.status === "COMPLETED");
-    if (!allRequiredComplete || mission.status === "READY") return mission;
+      mission.tasks.every((task) =>
+        ["COMPLETED", "BLOCKED", "FAILED"].includes(task.status),
+      );
+    if (!allTasksTerminal || mission.status === "READY") return mission;
 
     await this.missionService.transitionMission(mission.id, "READY");
+    const blockedCount = mission.tasks.filter(
+      (task) => task.status === "BLOCKED",
+    ).length;
+    const failedCount = mission.tasks.filter(
+      (task) => task.status === "FAILED",
+    ).length;
     await this.missionService.addTimelineEntry(mission.id, {
       kind: "STATUS_CHANGED",
-      message: "Mission reached READY after all required workflow tasks completed.",
+      message:
+        blockedCount + failedCount === 0
+          ? "Mission reached READY after all workflow tasks completed."
+          : `Mission reached READY with ${blockedCount} blocked and ${failedCount} failed task(s) clearly recorded.`,
     });
     const notification = await this.notificationAgent.run({
       mission,
@@ -299,6 +303,7 @@ export class MissionOrchestrator {
       capability: result.capability,
       taskKey: task.key,
       summary: result.summary,
+      confidenceScore: result.confidenceScore,
       data: result.data,
       sourceUrls: result.sourceUrls,
       retrievedAt: result.retrievedAt,

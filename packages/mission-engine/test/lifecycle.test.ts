@@ -19,7 +19,7 @@ test("rejects lifecycle transitions that skip or reverse mission states", () => 
   assert.throws(() => assertMissionTransition("READY", "DRAFT"));
 });
 
-test("computes progress from completed tasks and completes ready missions", () => {
+test("computes progress from completed tasks even for partially ready missions", () => {
   assert.equal(
     calculateMissionProgress("ACTIVE", [
       task("COMPLETED"),
@@ -28,5 +28,13 @@ test("computes progress from completed tasks and completes ready missions", () =
     50,
   );
   assert.equal(calculateMissionProgress("ACTIVE", []), 0);
-  assert.equal(calculateMissionProgress("READY", [task("NOT_STARTED")]), 100);
+  assert.equal(calculateMissionProgress("READY", [task("NOT_STARTED")]), 0);
+  assert.equal(
+    calculateMissionProgress("READY", [
+      task("COMPLETED"),
+      task("BLOCKED"),
+      task("COMPLETED"),
+    ]),
+    67,
+  );
 });

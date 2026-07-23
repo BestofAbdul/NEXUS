@@ -66,10 +66,15 @@ https://nexus-production-40fb.up.railway.app/api/a2mcp/mission
 - Schedules resumable tasks with capability, status, blocking reason, and
   execution timestamps.
 - Selects MCP providers by capability instead of hardcoded vendor names.
+- Uses Tavily as the default source-preserving evidence provider for research
+  capabilities such as immigration, jobs, universities, housing, healthcare,
+  events, relocation, and freight.
 - Researches requirements, destinations, costs, weather, places, and documents.
 - Ranks only provider-backed findings; missing evidence blocks recommendations.
 - Builds budgets only from prices returned by providers.
 - Computes progress from completed workflow tasks.
+- Completes runnable work even when an optional capability is unavailable, then
+  reports completed tasks, blocked tasks, evidence confidence, and unlock steps.
 - Persists every operation in a mission timeline.
 - Exposes mission state through a machine-readable agent contract.
 
@@ -135,11 +140,13 @@ The current architecture includes:
 - provider/task provenance and source URLs on stored evidence
 - evidence-only recommendations and budgets with no deterministic allowances
 - persisted mission execution timeline
-- Amadeus flight and hotel adapters
+- optional Amadeus flight, airport, and hotel adapter, registered only when
+  credentials are configured
 - Open-Meteo dated forecasts
 - OpenStreetMap destination and local-transport evidence
 - Frankfurter/REST Countries currency evidence
-- Tavily source-preserving research for regulated and broad-market capabilities
+- Tavily source-preserving research with evidence-grounded synthesized answers
+  and confidence scores
 - persisted, idempotent orchestration notifications
 - verified free OKX.AI A2MCP behavior with direct HTTP `200`
 - outward-facing MCP Streamable HTTP `nexus_mission` tool

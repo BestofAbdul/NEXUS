@@ -88,6 +88,13 @@ async function resumeMission(
 
   if (mission.status === "DRAFT") {
     mission = await missionService.transitionMission(mission.id, "ACTIVE");
+  } else if (
+    mission.status === "READY" &&
+    mission.tasks.some(
+      (task) => task.status === "BLOCKED" || task.status === "FAILED",
+    )
+  ) {
+    mission = await missionService.transitionMission(mission.id, "ACTIVE");
   }
 
   return toResponse(await missionOrchestrator.run(mission));
@@ -97,6 +104,18 @@ function toResponse(
   orchestration: MissionOrchestrationResult,
 ): A2MCPMissionResponse {
   const { mission } = orchestration;
+  const evidenceResults = mission.researchResults.filter(
+    (result) => result.capability !== "mission-plan",
+  );
+  const averageConfidence =
+    evidenceResults.length > 0
+      ? roundConfidence(
+          evidenceResults.reduce(
+            (total, result) => total + result.confidenceScore,
+            0,
+          ) / evidenceResults.length,
+        )
+      : null;
 
   return {
     accepted: true,
@@ -144,7 +163,80 @@ function toResponse(
       ...entry,
       occurredAt: entry.occurredAt.toISOString(),
     })),
+    executionSummary: {
+      completedTasks: mission.tasks
+        .filter((task) => task.status === "COMPLETED")
+        .map(taskSummary),
+      blockedTasks: mission.tasks
+        .filter((task) => task.status === "BLOCKED")
+        .map((task) => ({
+          ...taskSummary(task),
+          reason: task.blockedReason ?? "Capability is blocked.",
+        })),
+      failedTasks: mission.tasks
+        .filter((task) => task.status === "FAILED")
+        .map((task) => ({
+          ...taskSummary(task),
+          reason: task.blockedReason ?? "Capability execution failed.",
+        })),
+      evidenceCollected: evidenceResults.map((result) => ({
+        capability: result.capability,
+        providerId: result.providerId,
+        summary: result.summary,
+        confidenceScore: result.confidenceScore,
+        sourceUrls: result.sourceUrls,
+      })),
+      averageConfidence,
+      pendingActions: pendingActions(mission, orchestration.pendingQuestions),
+    },
   };
+}
+
+function taskSummary(task: {
+  key: string;
+  title: string;
+  capability: string;
+}) {
+  return {
+    key: task.key,
+    title: task.title,
+    capability: task.capability,
+  };
+}
+
+function pendingActions(
+  mission: MissionOrchestrationResult["mission"],
+  pendingQuestions: string[],
+): string[] {
+  const actions = [...pendingQuestions];
+  for (const task of mission.tasks) {
+    if (task.status !== "BLOCKED" && task.status !== "FAILED") continue;
+    const reason = task.blockedReason ?? "Capability execution is unavailable.";
+    if (reason === "No flight provider configured") {
+      actions.push(
+        "Configure a provider with the flights capability to unlock live flight schedules and fares.",
+      );
+    } else if (reason === "No airport provider configured") {
+      actions.push(
+        "Configure a provider with the airports capability to unlock route and airport resolution.",
+      );
+    } else if (reason === "No hotel provider configured") {
+      actions.push(
+        "Configure a provider with the hotels capability to unlock live accommodation offers.",
+      );
+    } else if (/No MCP provider|unconfigured|not configured/i.test(reason)) {
+      actions.push(
+        `Configure an MCP provider for the ${task.capability} capability.`,
+      );
+    } else {
+      actions.push(`${task.title}: ${reason}`);
+    }
+  }
+  return [...new Set(actions)];
+}
+
+function roundConfidence(value: number): number {
+  return Math.round(value * 100) / 100;
 }
 
 function titleFromGoal(goal: string): string {

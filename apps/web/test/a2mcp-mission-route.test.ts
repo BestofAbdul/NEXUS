@@ -1,13 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { PrismaClient } from "@prisma/client";
-import { POST } from "../app/api/a2mcp/mission/route.js";
 
 const prisma = new PrismaClient();
 const createdMissionIds = new Set<string>();
 const originalFetch = globalThis.fetch;
+const originalTavilyApiKey = process.env.TAVILY_API_KEY;
+const originalAmadeusClientId = process.env.AMADEUS_CLIENT_ID;
+const originalAmadeusClientSecret = process.env.AMADEUS_CLIENT_SECRET;
 
-test.before(() => {
+process.env.TAVILY_API_KEY = "test-tavily-key";
+delete process.env.AMADEUS_CLIENT_ID;
+delete process.env.AMADEUS_CLIENT_SECRET;
+
+let POST: typeof import("../app/api/a2mcp/mission/route.js").POST;
+
+test.before(async () => {
+  ({ POST } = await import("../app/api/a2mcp/mission/route.js"));
   globalThis.fetch = mockProviderFetch;
 });
 
@@ -18,10 +27,13 @@ test.after(async () => {
     });
   }
   globalThis.fetch = originalFetch;
+  restoreEnvironment("TAVILY_API_KEY", originalTavilyApiKey);
+  restoreEnvironment("AMADEUS_CLIENT_ID", originalAmadeusClientId);
+  restoreEnvironment("AMADEUS_CLIENT_SECRET", originalAmadeusClientSecret);
   await prisma.$disconnect();
 });
 
-test("creates an evidence workflow instead of assumed job advice", async () => {
+test("creates a Tavily-backed evidence workflow instead of assumed job advice", async () => {
   const response = await invoke({
     goal: "Land a senior platform engineering role",
     missionType: "NEW_JOB",
@@ -38,19 +50,23 @@ test("creates an evidence workflow instead of assumed job advice", async () => {
   assert.equal(response.status, 200);
   assert.equal(body.accepted, true);
   assert.equal(body.missionType, "NEW_JOB");
-  assert.equal(body.status, "ACTIVE");
-  assert.equal(body.progress, 0);
+  assert.equal(body.status, "READY");
+  assert.equal(body.progress, 100);
   assert.deepEqual(body.pendingQuestions, []);
-  assert.equal(body.results.length, 1);
+  assert.equal(body.results.length, 5);
   assert.equal(body.results[0].capability, "mission-plan");
   assert.equal(body.tasks.length, 5);
   assert.ok(body.tasks.every((task: any) => task.capability));
-  assert.ok(body.tasks.some((task: any) => task.status === "BLOCKED"));
-  assert.match(body.currentActivity, /TAVILY_API_KEY|provider/i);
-  assert.equal(body.recommendations.length, 0);
+  assert.ok(body.tasks.every((task: any) => task.status === "COMPLETED"));
+  assert.match(body.currentActivity, /ready from verified evidence/i);
+  assert.ok(body.recommendations.length > 0);
   assert.equal(body.costBreakdown.total, 0);
+  assert.equal(body.executionSummary.blockedTasks.length, 0);
+  assert.equal(body.executionSummary.evidenceCollected.length, 4);
+  assert.ok(body.executionSummary.averageConfidence > 0);
+  assert.match(body.results[1].summary, /Tavily synthesized evidence/i);
   assert.ok(body.timeline.some((entry: any) => entry.kind === "WORKFLOW_CREATED"));
-  assert.ok(body.timeline.some((entry: any) => entry.kind === "TASK_BLOCKED"));
+  assert.ok(body.timeline.some((entry: any) => entry.kind === "EVIDENCE_STORED"));
 });
 
 test("resumes a blocked workflow without duplicating mission, tasks, or evidence", async () => {
@@ -166,9 +182,25 @@ test("asks blocking travel questions, merges answers, and executes available API
         task.capability === "flights" && task.status === "BLOCKED",
     ),
   );
-  assert.equal(resumed.recommendations.length, 0);
+  assert.equal(
+    resumed.tasks.find((task: any) => task.capability === "flights")
+      .blockedReason,
+    "No flight provider configured",
+  );
+  assert.equal(resumed.status, "READY");
+  assert.ok(resumed.recommendations.length > 0);
   assert.equal(resumed.costBreakdown.total, 0);
   assert.ok(resumed.progress > 0 && resumed.progress < 100);
+  assert.ok(
+    resumed.executionSummary.pendingActions.some((action: string) =>
+      action.includes("flights capability"),
+    ),
+  );
+  assert.ok(
+    resumed.executionSummary.evidenceCollected.every(
+      (evidence: any) => typeof evidence.confidenceScore === "number",
+    ),
+  );
 
   const missionCount = await prisma.mission.count();
   const taskCount = await prisma.task.count({
@@ -284,9 +316,14 @@ test("study abroad uses its own workflow and blocks instead of fabricating", asy
       "recommendations",
     ],
   );
-  assert.equal(body.recommendations.length, 0);
+  assert.equal(body.status, "READY");
+  assert.ok(body.recommendations.length > 0);
   assert.equal(body.costBreakdown.total, 0);
-  assert.match(body.currentActivity, /TAVILY_API_KEY|provider/i);
+  assert.equal(body.executionSummary.blockedTasks.length, 1);
+  assert.equal(
+    body.executionSummary.blockedTasks[0].capability,
+    "budget",
+  );
 });
 
 test("rejects an invalid recommendation action", async () => {
@@ -299,30 +336,32 @@ test("rejects an invalid recommendation action", async () => {
   assert.equal(body.error.code, "INVALID_ACTION");
 });
 
-test(
-  "returns live Amadeus evidence when credentials are configured",
-  { skip: !process.env.AMADEUS_CLIENT_ID || !process.env.AMADEUS_CLIENT_SECRET },
-  async () => {
-    const response = await invoke({
-      goal: "Find a flight from Lagos to New York",
-      missionType: "TRAVEL",
-      context: {
-        origin: "Lagos",
-        destination: "New York",
-        departureDate: futureDate(7),
-      },
-    });
-    const body = await response.json();
-    createdMissionIds.add(body.missionId);
-    assert.equal(response.status, 200);
-    assert.ok(
-      body.results.some((result: any) => result.capability === "airports"),
-    );
-    assert.ok(
-      body.results.some((result: any) => result.capability === "flights"),
-    );
-  },
-);
+test("treats Amadeus as optional and reports the missing flight capability exactly", async () => {
+  const response = await invoke({
+    goal: "Find a flight from Lagos to New York",
+    missionType: "TRAVEL",
+    context: {
+      origin: "Lagos",
+      destination: "New York",
+      departureDate: futureDate(7),
+    },
+  });
+  const body = await response.json();
+  createdMissionIds.add(body.missionId);
+  const flightTask = body.tasks.find(
+    (task: any) => task.capability === "flights",
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(body.status, "READY");
+  assert.equal(flightTask.status, "BLOCKED");
+  assert.equal(flightTask.blockedReason, "No flight provider configured");
+  assert.ok(
+    body.results.some((result: any) => result.capability === "weather"),
+  );
+  assert.ok(body.results.some((result: any) => result.capability === "visa"));
+  assert.ok(body.recommendations.length > 0);
+});
 
 function invoke(body: Record<string, unknown>): Promise<Response> {
   return POST(
@@ -353,13 +392,15 @@ async function mockProviderFetch(
   );
 
   if (url.hostname === "geocoding-api.open-meteo.com") {
+    const location = url.searchParams.get("name") ?? "New York";
+    const isLagos = /lagos/i.test(location);
     return jsonResponse({
       results: [
         {
-          name: "New York",
-          country: "United States",
-          latitude: 40.7128,
-          longitude: -74.006,
+          name: isLagos ? "Lagos" : "New York",
+          country: isLagos ? "Nigeria" : "United States",
+          latitude: isLagos ? 6.5244 : 40.7128,
+          longitude: isLagos ? 3.3792 : -74.006,
         },
       ],
     });
@@ -411,6 +452,49 @@ async function mockProviderFetch(
     });
   }
 
+  if (url.hostname === "api.tavily.com") {
+    const requestBody =
+      typeof init?.body === "string" ? JSON.parse(init.body) : {};
+    const query =
+      typeof requestBody.query === "string"
+        ? requestBody.query
+        : "mission research";
+    return jsonResponse({
+      answer: `Tavily synthesized evidence for ${query}`,
+      results: [
+        {
+          title: `Primary evidence for ${query}`,
+          url: "https://example.gov/primary-evidence",
+          content: `Verified source excerpt about ${query}.`,
+          score: 0.92,
+        },
+        {
+          title: `Supporting evidence for ${query}`,
+          url: "https://example.edu/supporting-evidence",
+          content: `Additional source excerpt about ${query}.`,
+          score: 0.84,
+        },
+      ],
+    });
+  }
+
+  if (url.hostname === "restcountries.com") {
+    const isNigeria = /Nigeria/i.test(url.pathname);
+    return jsonResponse([
+      {
+        currencies: isNigeria ? { NGN: { name: "Naira" } } : { USD: { name: "US Dollar" } },
+      },
+    ]);
+  }
+
+  if (url.hostname === "api.frankfurter.dev") {
+    const quote = url.searchParams.get("symbols") ?? "USD";
+    return jsonResponse({
+      date: new Date().toISOString().slice(0, 10),
+      rates: { [quote]: 0.00065 },
+    });
+  }
+
   return originalFetch(input, init);
 }
 
@@ -426,4 +510,12 @@ function hashCode(value: string): number {
     (hash, character) => (hash * 31 + character.charCodeAt(0)) | 0,
     7,
   );
+}
+
+function restoreEnvironment(key: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[key];
+  } else {
+    process.env[key] = value;
+  }
 }

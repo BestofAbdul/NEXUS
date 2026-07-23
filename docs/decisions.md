@@ -505,7 +505,43 @@ the existing Railway volume can migrate without deleting legacy task rows. All
 new workflow tasks always receive a stable key, and legacy rows map their ID as
 a fallback key.
 
-**Owner action required:** Add `TAVILY_API_KEY`,
-`AMADEUS_CLIENT_ID`, and `AMADEUS_CLIENT_SECRET` to Railway. Without these
-credentials, affected tasks remain visibly BLOCKED and NEXUS returns no
+**Owner action required:** Add `TAVILY_API_KEY` to Railway for broad live
+research. `AMADEUS_CLIENT_ID` and `AMADEUS_CLIENT_SECRET` are optional and should
+be added only if live Amadeus flight, airport, and hotel capabilities are
+desired. Missing capabilities remain visibly BLOCKED and NEXUS returns no
 fabricated result. No account-bound credential is committed to the repository.
+
+## 2026-07-23 - Make Tavily the default evidence provider and Amadeus optional
+
+**Decision:** Register Amadeus only when both Amadeus credentials are present.
+Workflow definitions request generic `airports`, `flights`, and `hotels`
+capabilities and do not depend on the Amadeus class. If no flight provider is
+registered, the task is `BLOCKED` with the exact reason
+`No flight provider configured`; weather, places, visa, currency,
+transportation, and other independent research continue.
+
+**Tavily evidence boundary:** Tavily is the first-choice provider for broad
+research capabilities including visa, immigration, jobs, universities,
+programs, scholarships, housing, healthcare, government documents, relocation,
+events, transportation, freight, customs, property, employers, salaries, and
+medical logistics. The provider requests Tavily's advanced synthesized answer
+and persists that answer with the returned source excerpts and URLs. NEXUS ranks
+and summarizes only this returned evidence; it does not insert unsupported
+mission advice.
+
+**Confidence:** Every persisted research result includes a normalized
+`confidenceScore`. Tavily confidence is derived from returned relevance scores;
+structured first-party providers use a provider-specific confidence value. The
+A2MCP response exposes each score and an average across external evidence.
+
+**Partial readiness:** A mission reaches `READY` once every scheduled task is
+terminal (`COMPLETED`, `BLOCKED`, or `FAILED`). Progress remains the percentage
+of tasks actually completed and is not forced to 100 for READY missions. The
+response includes completed, blocked, and failed task lists, collected evidence,
+average confidence, and pending actions needed to unlock missing capabilities.
+A plain resume reopens and retries blocked work without duplicating mission
+state.
+
+**Credential handling:** `TAVILY_API_KEY` is required for broad live research
+and must be stored only as a local or Railway secret. Amadeus credentials are
+optional and no longer block Travel missions.
