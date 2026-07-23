@@ -4,22 +4,30 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as z from "zod/v4";
 import type { MCPProvider, MCPRequest, MCPResponse } from "../index";
 
-const weatherObservationShape = {
+const weatherForecastShape = {
   source: z.literal("Open-Meteo"),
   location: z.string(),
   country: z.string(),
-  latitude: z.number(),
-  longitude: z.number(),
+  latitude: z.number().nullable(),
+  longitude: z.number().nullable(),
   timezone: z.string(),
-  observedAt: z.string(),
-  temperatureC: z.number(),
-  apparentTemperatureC: z.number(),
-  windSpeedKph: z.number(),
-  weatherCode: z.number(),
-  conditions: z.string(),
+  requestedDate: z.string(),
+  status: z.enum(["FORECAST", "OUT_OF_RANGE"]),
+  forecastHorizonDays: z.number(),
+  forecast: z
+    .object({
+      temperatureMaxC: z.number(),
+      temperatureMinC: z.number(),
+      precipitationProbabilityPercent: z.number(),
+      windSpeedMaxKph: z.number(),
+      weatherCode: z.number(),
+      conditions: z.string(),
+    })
+    .nullable(),
+  note: z.string().nullable(),
 };
 
-const weatherObservationSchema = z.object(weatherObservationShape);
+const weatherForecastSchema = z.object(weatherForecastShape);
 
 const geocodingResponseSchema = z.object({
   results: z
@@ -36,23 +44,26 @@ const geocodingResponseSchema = z.object({
 
 const forecastResponseSchema = z.object({
   timezone: z.string(),
-  current: z.object({
-    time: z.string(),
-    temperature_2m: z.number(),
-    apparent_temperature: z.number(),
-    weather_code: z.number(),
-    wind_speed_10m: z.number(),
+  daily: z.object({
+    time: z.array(z.string()),
+    temperature_2m_max: z.array(z.number()),
+    temperature_2m_min: z.array(z.number()),
+    precipitation_probability_max: z.array(z.number()),
+    wind_speed_10m_max: z.array(z.number()),
+    weather_code: z.array(z.number()),
   }),
 });
 
-export type WeatherObservation = z.infer<typeof weatherObservationSchema>;
+export type WeatherForecast = z.infer<typeof weatherForecastSchema>;
+
+const FORECAST_HORIZON_DAYS = 16;
 
 export class OpenMeteoWeatherProvider implements MCPProvider {
   readonly id = "open-meteo-weather";
   readonly capabilities = ["weather"] as const;
 
-  async invoke(request: MCPRequest): Promise<MCPResponse<WeatherObservation>> {
-    if (request.capability !== "weather" || request.operation !== "current") {
+  async invoke(request: MCPRequest): Promise<MCPResponse<WeatherForecast>> {
+    if (request.capability !== "weather" || request.operation !== "forecast") {
       return {
         ok: false,
         error: `Unsupported weather request: ${request.capability}/${request.operation}`,
@@ -60,14 +71,23 @@ export class OpenMeteoWeatherProvider implements MCPProvider {
     }
 
     const location = request.input.location;
-    if (typeof location !== "string" || location.trim().length === 0) {
-      return { ok: false, error: "Weather requests require a location." };
+    const date = request.input.date;
+    if (
+      typeof location !== "string" ||
+      location.trim().length === 0 ||
+      typeof date !== "string" ||
+      !isIsoDate(date)
+    ) {
+      return {
+        ok: false,
+        error: "Weather forecasts require a location and YYYY-MM-DD date.",
+      };
     }
 
     const server = createWeatherServer();
     const client = new Client({
       name: "nexus-weather-client",
-      version: "1.0.0",
+      version: "2.0.0",
     });
     const [clientTransport, serverTransport] =
       InMemoryTransport.createLinkedPair();
@@ -75,37 +95,29 @@ export class OpenMeteoWeatherProvider implements MCPProvider {
     try {
       await server.connect(serverTransport);
       await client.connect(clientTransport);
-
       const result = await client.callTool({
-        name: "get_current_weather",
-        arguments: { location: location.trim() },
+        name: "get_weather_forecast",
+        arguments: { location: location.trim(), date },
       });
 
-      if ("toolResult" in result) {
-        return { ok: false, error: "Weather MCP returned an unexpected task." };
-      }
-
-      if (result.isError || !result.structuredContent) {
+      if ("toolResult" in result || result.isError || !result.structuredContent) {
         return {
           ok: false,
           error: readToolError(result.content) ?? "Weather MCP tool failed.",
         };
       }
 
-      const observation = weatherObservationSchema.parse(
-        result.structuredContent,
-      );
+      const forecast = weatherForecastSchema.parse(result.structuredContent);
       const serverVersion = client.getServerVersion();
-
       return {
         ok: true,
-        data: observation,
+        data: forecast,
         metadata: {
           protocol: "MCP",
           transport: "in-memory",
           serverName: serverVersion?.name,
           serverVersion: serverVersion?.version,
-          tool: "get_current_weather",
+          tool: "get_weather_forecast",
         },
       };
     } catch (error) {
@@ -125,18 +137,19 @@ export class OpenMeteoWeatherProvider implements MCPProvider {
 function createWeatherServer(): McpServer {
   const server = new McpServer({
     name: "nexus-open-meteo-weather",
-    version: "1.0.0",
+    version: "2.0.0",
   });
 
   server.registerTool(
-    "get_current_weather",
+    "get_weather_forecast",
     {
       description:
-        "Resolve a place name and return live current weather from Open-Meteo.",
+        "Resolve a destination and return the Open-Meteo daily forecast for a selected travel date when it is inside the forecast horizon.",
       inputSchema: {
-        location: z.string().min(1).describe("City or destination name"),
+        location: z.string().min(1),
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
       },
-      outputSchema: weatherObservationShape,
+      outputSchema: weatherForecastShape,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -144,17 +157,11 @@ function createWeatherServer(): McpServer {
         openWorldHint: true,
       },
     },
-    async ({ location }) => {
-      const observation = await fetchCurrentWeather(location);
-
+    async ({ location, date }) => {
+      const forecast = await fetchWeatherForecast(location, date);
       return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(observation),
-          },
-        ],
-        structuredContent: observation,
+        content: [{ type: "text", text: JSON.stringify(forecast) }],
+        structuredContent: forecast,
       };
     },
   );
@@ -162,9 +169,30 @@ function createWeatherServer(): McpServer {
   return server;
 }
 
-async function fetchCurrentWeather(
+async function fetchWeatherForecast(
   location: string,
-): Promise<WeatherObservation> {
+  requestedDate: string,
+): Promise<WeatherForecast> {
+  const daysAway = differenceInUtcDays(todayIso(), requestedDate);
+  if (daysAway < 0 || daysAway >= FORECAST_HORIZON_DAYS) {
+    return {
+      source: "Open-Meteo",
+      location,
+      country: "Unknown",
+      latitude: null,
+      longitude: null,
+      timezone: "unavailable",
+      requestedDate,
+      status: "OUT_OF_RANGE",
+      forecastHorizonDays: FORECAST_HORIZON_DAYS,
+      forecast: null,
+      note:
+        daysAway < 0
+          ? "The selected travel date is in the past, so no forecast was requested."
+          : `The selected date is outside Open-Meteo's ${FORECAST_HORIZON_DAYS}-day forecast horizon. NEXUS will not substitute current weather.`,
+    };
+  }
+
   const geocodingUrl = new URL(
     "https://geocoding-api.open-meteo.com/v1/search",
   );
@@ -185,14 +213,20 @@ async function fetchCurrentWeather(
   forecastUrl.searchParams.set("latitude", String(place.latitude));
   forecastUrl.searchParams.set("longitude", String(place.longitude));
   forecastUrl.searchParams.set(
-    "current",
-    "temperature_2m,apparent_temperature,weather_code,wind_speed_10m",
+    "daily",
+    "temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max,weather_code",
   );
+  forecastUrl.searchParams.set("start_date", requestedDate);
+  forecastUrl.searchParams.set("end_date", requestedDate);
   forecastUrl.searchParams.set("timezone", "auto");
 
-  const forecast = forecastResponseSchema.parse(
+  const payload = forecastResponseSchema.parse(
     await fetchJsonWithRetry(forecastUrl),
   );
+  const index = payload.daily.time.indexOf(requestedDate);
+  if (index < 0) {
+    throw new Error(`Open-Meteo returned no forecast for ${requestedDate}.`);
+  }
 
   return {
     source: "Open-Meteo",
@@ -200,68 +234,75 @@ async function fetchCurrentWeather(
     country: place.country,
     latitude: place.latitude,
     longitude: place.longitude,
-    timezone: forecast.timezone,
-    observedAt: forecast.current.time,
-    temperatureC: forecast.current.temperature_2m,
-    apparentTemperatureC: forecast.current.apparent_temperature,
-    windSpeedKph: forecast.current.wind_speed_10m,
-    weatherCode: forecast.current.weather_code,
-    conditions: weatherCodeToConditions(forecast.current.weather_code),
+    timezone: payload.timezone,
+    requestedDate,
+    status: "FORECAST",
+    forecastHorizonDays: FORECAST_HORIZON_DAYS,
+    forecast: {
+      temperatureMaxC: payload.daily.temperature_2m_max[index]!,
+      temperatureMinC: payload.daily.temperature_2m_min[index]!,
+      precipitationProbabilityPercent:
+        payload.daily.precipitation_probability_max[index]!,
+      windSpeedMaxKph: payload.daily.wind_speed_10m_max[index]!,
+      weatherCode: payload.daily.weather_code[index]!,
+      conditions: weatherCodeToConditions(payload.daily.weather_code[index]!),
+    },
+    note: null,
   };
 }
 
 async function fetchJsonWithRetry(url: URL): Promise<unknown> {
   let lastError: unknown;
-
   for (let attempt = 0; attempt < 4; attempt += 1) {
     try {
       const response = await fetch(url, {
-        headers: { "user-agent": "NEXUS/1.0 weather MCP provider" },
+        headers: { "user-agent": "NEXUS/2.0 weather MCP provider" },
         signal: AbortSignal.timeout(12_000),
       });
-
       if (!response.ok) {
-        throw new Error(
-          `Open-Meteo request failed with HTTP ${response.status}.`,
-        );
+        throw new Error(`Open-Meteo request failed with HTTP ${response.status}.`);
       }
-
       return response.json();
     } catch (error) {
       lastError = error;
-
       if (attempt < 3) {
-        await delay(500 * 2 ** attempt);
+        await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
       }
     }
   }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Open-Meteo forecast request failed.");
+}
 
-  const detail =
-    lastError instanceof Error
-      ? `${lastError.message}${formatErrorCause(lastError.cause)}`
-      : "unknown network error";
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
-  throw new Error(
-    `Open-Meteo request to ${url.hostname} failed after 4 attempts: ${detail}`,
+function differenceInUtcDays(from: string, to: string): number {
+  return Math.floor(
+    (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) /
+      86_400_000,
   );
 }
 
-function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+function isIsoDate(value: string): boolean {
+  return (
+    /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+    new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value
+  );
 }
 
-function formatErrorCause(cause: unknown): string {
-  if (cause instanceof Error) {
-    return ` (${cause.message})`;
-  }
-
-  return "";
-}
-
-function readToolError(
-  content: Array<{ type: string; text?: string }>,
-): string | undefined {
-  return content.find((item) => item.type === "text")?.text;
+function readToolError(content: unknown): string | undefined {
+  if (!Array.isArray(content)) return undefined;
+  const item = content.find(
+    (entry): entry is { type: string; text?: string } =>
+      typeof entry === "object" &&
+      entry !== null &&
+      "type" in entry &&
+      entry.type === "text",
+  );
+  return item?.text;
 }
 
 function weatherCodeToConditions(code: number): string {

@@ -8,14 +8,18 @@ they do not own UI or persistence implementation details.
 
 The implemented flow includes:
 
-- `MissionPlannerAgent`, which interprets each mission type, goal, and submitted
-  preference into focus areas and persisted next-action tasks;
+- mission-specific workflow definitions with separate Travel, Relocate, Study,
+  Property, Job, Event, Medical, Freight, and Custom capability sequences;
+- `MissionPlannerAgent`, which turns the selected definition into durable,
+  ordered workflow tasks;
 - `ResearchAgent`, which selects weather, nearby-place, or knowledge-search MCP
-  capabilities and converts provider output into mission evidence;
-- `MissionOrchestrator`, which runs research, persists results through the
-  Mission Engine, and returns current activity to the A2MCP route;
-- `RecommendationAgent`, which uses mission-specific logic and caller context
-  to produce ranked actions for all nine mission types;
-- `CostAnalysisAgent`, which creates type-aware informational budget line items
-  only;
+  capabilities plus airport resolution and flight offers, and converts provider
+  output into mission evidence;
+- `MissionOrchestrator`, which schedules and resumes tasks, persists timeline
+  operations, stores task-owned evidence, retries blocked providers, and moves a
+  mission to READY only when required tasks complete;
+- `RecommendationAgent`, which ranks comparable persisted evidence and blocks
+  when no evidence exists;
+- `CostAnalysisAgent`, which extracts only provider-returned prices and never
+  creates planning allowances;
 - `NotificationAgent`, which persists completed orchestration stages.

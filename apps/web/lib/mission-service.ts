@@ -9,9 +9,12 @@ import {
 } from "@nexus/agents";
 import {
   MCPProviderRegistry,
+  AmadeusFlightProvider,
+  FrankfurterCurrencyProvider,
   OpenMeteoWeatherProvider,
   WikimediaKnowledgeProvider,
   OpenStreetMapPlacesProvider,
+  TavilyEvidenceProvider,
 } from "@nexus/mcp-adapters";
 import {
   MissionService,
@@ -39,6 +42,9 @@ export const missionService = new MissionService(
 );
 
 const mcpProviders = new MCPProviderRegistry([
+  new AmadeusFlightProvider(),
+  new TavilyEvidenceProvider(),
+  new FrankfurterCurrencyProvider(),
   new OpenMeteoWeatherProvider(),
   new WikimediaKnowledgeProvider(),
   new OpenStreetMapPlacesProvider(),

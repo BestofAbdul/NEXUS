@@ -423,3 +423,89 @@ build uses Webpack consistently and emits standalone output on Linux (including
 the production container build), while local Windows builds skip standalone
 packaging. This preserves the smaller production image and makes root
 `pnpm build` verifiable on the development machine.
+
+## 2026-07-22 - Replace assumed Travel answers with provider-driven evidence
+
+**Decision:** Travel is the first deep mission vertical. It requires an origin,
+an exact destination city or airport, and a specific departure date before
+research starts. New answers are merged into the same persisted mission; changed
+answers or a recommendation-exploration action invalidate stale derived output
+and rerun orchestration without creating a duplicate mission.
+
+**Flight provider:** Use Amadeus Self-Service behind the capability registry for
+Airport and City Search plus Flight Offers Search. Authentication uses OAuth
+client credentials and caches the short-lived access token. The default is the
+Amadeus test environment; production access remains a separate provider/account
+decision. Returned offers persist route criteria, airport codes, schedules,
+duration, stops, airline codes, price, currency, seats when supplied, fetch time,
+and provider metadata. Search links are labeled as external route-search links,
+not confirmed booking links.
+
+**No-fabrication rule:** If `AMADEUS_CLIENT_ID` or
+`AMADEUS_CLIENT_SECRET` is absent, NEXUS persists
+`PROVIDER_NOT_CONFIGURED`, returns no airfare and no flight cost line, and tells
+the caller what is missing. It must never replace a failed live search with a
+template fare.
+
+**Weather provider:** Open-Meteo now receives the selected travel date and
+returns daily high/low temperature, precipitation probability, wind, and
+conditions when the date is inside the 16-day forecast horizon. Dates outside
+that horizon return `OUT_OF_RANGE` with no forecast. Current weather is never
+presented as weather for a future trip.
+
+**Exploration:** `A2MCPMissionRequest.action` supports
+`EXPLORE_RECOMMENDATION`. The same mission is refreshed and additional external
+knowledge research is persisted using the selected recommendation as the
+follow-up query. The operator UI exposes this as an Explore action.
+
+**Rationale:** Static travel advice and heuristic flight prices violate NEXUS's
+research-first boundary. This design follows the concise origin-to-destination
+interaction pattern the user identified in AirTrack while preserving NEXUS's
+no-booking and no-payment boundary.
+
+**Owner-controlled credential action:** Create or approve an Amadeus developer
+application, then set `AMADEUS_CLIENT_ID`, `AMADEUS_CLIENT_SECRET`, and
+`AMADEUS_ENVIRONMENT` in Railway. This requires an external developer account
+and cannot be completed from repository code alone. Until then, the public
+service remains honest but cannot return live flight offers.
+
+## 2026-07-23 - Add durable mission-specific workflow execution
+
+**Decision:** Preserve the Mission Engine, Prisma repository, capability
+registry, A2MCP endpoint, MCP endpoint, and Railway deployment, while adding an
+execution layer based on durable workflow tasks and timeline events.
+
+Each mission type now owns a separate ordered capability workflow. Tasks persist
+stable keys, capability, sequence, required/optional status, execution status,
+blocking reason, and timestamps. The orchestrator independently attempts each
+research task, stores evidence by task key, and records task start, completion,
+block, failure, and evidence events in the mission timeline. A plain resume
+retries blocked work without duplicating state.
+
+**Progress and readiness:** Progress is derived only from completed tasks.
+Blocked and failed tasks contribute zero. A mission reaches READY only when all
+required tasks complete. New context or an explicit exploration action can
+reactivate a READY mission, refresh derived state, and return it to READY after
+the new workflow completes.
+
+**Evidence boundary:** The previous deterministic non-Travel recommendation
+templates and fixed cost allowances are superseded. Recommendation Agent now
+ranks provider evidence only. Cost Analysis Agent extracts known structured
+prices only. Missing evidence or price data blocks the task instead of producing
+an assumed response.
+
+**Providers:** Existing Amadeus, Open-Meteo, OpenStreetMap, Wikimedia, MCP, and
+provider-registry boundaries are retained. Amadeus now includes hotel offers;
+OpenStreetMap includes nearby transport; Frankfurter plus REST Countries
+provides currency evidence; Tavily provides source-preserving current research
+for broad and regulated capabilities when configured.
+
+**Legacy SQLite safety:** New task keys are nullable at the database level so
+the existing Railway volume can migrate without deleting legacy task rows. All
+new workflow tasks always receive a stable key, and legacy rows map their ID as
+a fallback key.
+
+**Owner action required:** Add `TAVILY_API_KEY`,
+`AMADEUS_CLIENT_ID`, and `AMADEUS_CLIENT_SECRET` to Railway. Without these
+credentials, affected tasks remain visibly BLOCKED and NEXUS returns no
+fabricated result. No account-bound credential is committed to the repository.

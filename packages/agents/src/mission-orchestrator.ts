@@ -1,10 +1,15 @@
-import type { Mission } from "@nexus/shared";
+import type {
+  Mission,
+  Task,
+  WorkflowTaskDefinition,
+} from "@nexus/shared";
 import { MissionService } from "@nexus/mission-engine";
 import { CostAnalysisAgent } from "./cost-analysis-agent";
 import { MissionPlannerAgent } from "./mission-planner-agent";
 import { NotificationAgent } from "./notification-agent";
 import { RecommendationAgent } from "./recommendation-agent";
-import { ResearchAgent } from "./research-agent";
+import { ResearchAgent, type ResearchData } from "./research-agent";
+import { getBlockingQuestions } from "./workflow-definitions";
 
 export interface MissionOrchestrationResult {
   mission: Mission;
@@ -12,10 +17,7 @@ export interface MissionOrchestrationResult {
   pendingQuestions: string[];
 }
 
-type NotificationStage =
-  | "MISSION_PLANNED"
-  | "RESEARCH_COMPLETED"
-  | "MISSION_ANALYSIS_COMPLETED";
+const internalCapabilities = new Set(["budget", "recommendations"]);
 
 export class MissionOrchestrator {
   constructor(
@@ -29,187 +31,308 @@ export class MissionOrchestrator {
 
   async run(mission: Mission): Promise<MissionOrchestrationResult> {
     let workingMission = mission;
+    await this.ensureMissionCreatedEvent(workingMission);
 
-    if (!findResult(workingMission, "mission-plan")) {
-      const plan = await this.missionPlannerAgent.run({
-        mission: workingMission,
-        objective: "Interpret the goal and create a mission-specific plan.",
-      });
-      if (plan.status !== "COMPLETED" || !plan.data) {
-        throw new Error(plan.summary);
-      }
-
-      await this.missionService.addResearchResult(workingMission.id, {
-        providerId: plan.data.providerId,
-        capability: plan.data.capability,
-        summary: plan.data.summary,
-        data: plan.data.data,
-      });
-      for (const task of plan.data.tasks) {
-        await this.missionService.addTask(workingMission.id, task);
-      }
-      await this.persistNotification(workingMission, "MISSION_PLANNED");
-      workingMission = await this.requireUpdatedMission(workingMission.id);
-    }
-
-    if (workingMission.type === "TRAVEL") {
-      const travelResearch = await this.runTravelResearch(workingMission);
-      if (travelResearch.pendingQuestions.length > 0) {
-        return travelResearch;
-      }
-      workingMission = travelResearch.mission;
-    } else if (!findResult(workingMission, "knowledge")) {
-      const result = await this.researchAgent.run({
-        mission: workingMission,
-        objective: "Search external background relevant to the mission.",
-        context: { capability: "knowledge" },
-      });
-      if (result.status !== "COMPLETED" || !result.data) {
-        throw new Error(result.summary);
-      }
-
-      await this.missionService.addResearchResult(workingMission.id, {
-        providerId: result.data.providerId,
-        capability: result.data.capability,
-        summary: result.data.summary,
-        data: result.data.data,
-      });
-      await this.persistNotification(workingMission, "RESEARCH_COMPLETED");
-      workingMission = await this.requireUpdatedMission(workingMission.id);
-    }
-
-    if (workingMission.recommendations.length === 0) {
-      const result = await this.recommendationAgent.run({
-        mission: workingMission,
-        objective: `Produce ranked recommendations for ${workingMission.type}.`,
-      });
-      if (result.status !== "COMPLETED" || !result.data) {
-        throw new Error(result.summary);
-      }
-
-      await this.missionService.addRecommendations(
-        workingMission.id,
-        result.data,
+    const pendingQuestions = getBlockingQuestions(workingMission);
+    if (pendingQuestions.length > 0) {
+      await this.appendTimelineOnce(
+        workingMission,
+        "WAITING_FOR_USER",
+        `Waiting for required mission input: ${pendingQuestions.join(" ")}`,
       );
       workingMission = await this.requireUpdatedMission(workingMission.id);
-    }
-
-    if (workingMission.costEstimates.length === 0) {
-      const result = await this.costAnalysisAgent.run({
+      return {
         mission: workingMission,
-        objective: `Produce an informational ${workingMission.type} mission budget.`,
-      });
-      if (result.status !== "COMPLETED" || !result.data) {
-        throw new Error(result.summary);
-      }
-
-      await this.missionService.addCostEstimates(
-        workingMission.id,
-        result.data,
-      );
-      workingMission = await this.requireUpdatedMission(workingMission.id);
+        currentActivity:
+          "Mission created. Workflow execution is waiting for required input.",
+        pendingQuestions,
+      };
     }
 
-    await this.persistNotification(
-      workingMission,
-      "MISSION_ANALYSIS_COMPLETED",
+    if (workingMission.tasks.length === 0) {
+      workingMission = await this.createWorkflow(workingMission);
+    }
+
+    const researchTasks = workingMission.tasks
+      .filter((task) => !internalCapabilities.has(task.capability))
+      .sort(bySequence);
+    for (const task of researchTasks) {
+      if (task.status === "COMPLETED") continue;
+      workingMission = await this.executeResearchTask(workingMission, task);
+    }
+
+    workingMission = await this.executeBudgetTask(workingMission);
+    workingMission = await this.executeRecommendationTask(workingMission);
+    workingMission = await this.finalizeMission(workingMission);
+
+    const pending = workingMission.tasks.filter(
+      (task) => task.required && task.status !== "COMPLETED",
     );
-    workingMission = await this.requireUpdatedMission(workingMission.id);
-
+    const next = pending[0];
     return {
       mission: workingMission,
-      currentActivity: `${humanize(workingMission.type)} mission analysis is ready for human review.`,
+      currentActivity:
+        workingMission.status === "READY"
+          ? `${humanize(workingMission.type)} mission is ready from verified evidence.`
+          : next?.blockedReason
+            ? `${next.title}: ${next.blockedReason}`
+            : next
+              ? `${next.title} is waiting to run.`
+              : "Mission execution is active.",
       pendingQuestions: [],
     };
   }
 
-  private async runTravelResearch(
-    mission: Mission,
-  ): Promise<MissionOrchestrationResult> {
-    let workingMission = mission;
-    const persistedWeather = workingMission.researchResults.find(
-      (result) => result.capability === "weather",
-    );
-
-    if (!persistedWeather) {
-      const result = await this.researchAgent.run({
-        mission: workingMission,
-        objective: "Research current destination weather.",
-      });
-
-      if (result.status === "NEEDS_INPUT") {
-        return {
-          mission: workingMission,
-          currentActivity: result.summary,
-          pendingQuestions: result.pendingQuestions ?? [],
-        };
-      }
-
-      if (result.status === "FAILED" || !result.data) {
-        throw new Error(result.summary);
-      }
-
-      await this.missionService.addResearchResult(workingMission.id, {
-        providerId: result.data.providerId,
-        capability: result.data.capability,
-        summary: result.data.summary,
-        data: result.data.data,
-      });
-      await this.persistNotification(workingMission, "RESEARCH_COMPLETED");
-      workingMission = await this.requireUpdatedMission(workingMission.id);
-    }
-
-    if (!findResult(workingMission, "places")) {
-      const result = await this.researchAgent.run({
-        mission: workingMission,
-        objective: "Find notable places near the travel destination.",
-        context: { capability: "places" },
-      });
-
-      if (result.status === "NEEDS_INPUT") {
-        return {
-          mission: workingMission,
-          currentActivity: result.summary,
-          pendingQuestions: result.pendingQuestions ?? [],
-        };
-      }
-
-      if (result.status === "COMPLETED" && result.data) {
-        await this.missionService.addResearchResult(workingMission.id, {
-          providerId: result.data.providerId,
-          capability: result.data.capability,
-          summary: result.data.summary,
-          data: result.data.data,
-        });
-        workingMission = await this.requireUpdatedMission(workingMission.id);
-      } else {
-        console.warn(`Nearby places research skipped: ${result.summary}`);
-      }
-    }
-
-    await this.persistNotification(workingMission, "RESEARCH_COMPLETED");
-    workingMission = await this.requireUpdatedMission(workingMission.id);
-    return {
-      mission: workingMission,
-      currentActivity: "Destination research completed.",
-      pendingQuestions: [],
-    };
-  }
-
-  private async persistNotification(
-    mission: Mission,
-    stage: NotificationStage,
-  ): Promise<void> {
-    const result = await this.notificationAgent.run({
+  private async createWorkflow(mission: Mission): Promise<Mission> {
+    const plan = await this.missionPlannerAgent.run({
       mission,
-      objective: "Surface mission orchestration progress.",
-      context: { stage },
+      objective: "Create the mission-specific executable workflow.",
     });
-    if (result.status !== "COMPLETED" || !result.data) {
-      throw new Error(result.summary);
+    if (plan.status !== "COMPLETED" || !plan.data) {
+      throw new Error(plan.summary);
+    }
+    await this.missionService.addResearchResult(mission.id, {
+      providerId: plan.data.providerId,
+      capability: plan.data.capability,
+      taskKey: "workflow-plan",
+      summary: plan.data.summary,
+      data: plan.data.data,
+      sourceUrls: [],
+    });
+    for (const task of plan.data.tasks) {
+      await this.missionService.addTask(mission.id, toCreateTask(task));
+    }
+    await this.missionService.addTimelineEntry(mission.id, {
+      kind: "WORKFLOW_CREATED",
+      message: `Created ${plan.data.tasks.length} ordered workflow tasks for ${humanize(mission.type)}.`,
+    });
+    return this.requireUpdatedMission(mission.id);
+  }
+
+  private async executeResearchTask(
+    mission: Mission,
+    task: Task,
+  ): Promise<Mission> {
+    await this.startTask(mission, task);
+    const currentMission = await this.requireUpdatedMission(mission.id);
+    const result = await this.researchAgent.run({
+      mission: currentMission,
+      objective: task.description,
+      context: {
+        capability: task.capability,
+        taskKey: task.key,
+        taskTitle: task.title,
+      },
+    });
+
+    if (result.status === "COMPLETED" && result.data) {
+      await this.persistEvidence(mission.id, task, result.data);
+      await this.completeTask(mission.id, task, result.summary);
+    } else if (result.status === "NEEDS_INPUT") {
+      await this.blockTask(
+        mission.id,
+        task,
+        `${result.summary} ${(result.pendingQuestions ?? []).join(" ")}`.trim(),
+      );
+    } else if (result.status === "BLOCKED") {
+      await this.blockTask(mission.id, task, result.summary);
+    } else {
+      await this.failTask(mission.id, task, result.summary);
+    }
+    return this.requireUpdatedMission(mission.id);
+  }
+
+  private async executeBudgetTask(mission: Mission): Promise<Mission> {
+    const task = findTask(mission, "budget");
+    if (!task || task.status === "COMPLETED") return mission;
+    await this.startTask(mission, task);
+    const currentMission = await this.requireUpdatedMission(mission.id);
+    const result = await this.costAnalysisAgent.run({
+      mission: currentMission,
+      objective: "Build a budget only from provider-backed prices.",
+    });
+    if (result.status === "COMPLETED" && result.data) {
+      await this.missionService.addCostEstimates(mission.id, result.data);
+      await this.completeTask(mission.id, task, result.summary);
+    } else {
+      await this.blockTask(mission.id, task, result.summary);
+    }
+    return this.requireUpdatedMission(mission.id);
+  }
+
+  private async executeRecommendationTask(mission: Mission): Promise<Mission> {
+    const task = findTask(mission, "recommendations");
+    if (!task || task.status === "COMPLETED") return mission;
+    const incompleteRequiredResearch = mission.tasks.filter(
+      (candidate) =>
+        candidate.required &&
+        !internalCapabilities.has(candidate.capability) &&
+        candidate.status !== "COMPLETED",
+    );
+    if (incompleteRequiredResearch.length > 0) {
+      await this.blockTask(
+        mission.id,
+        task,
+        `Waiting for required evidence: ${incompleteRequiredResearch
+          .map((candidate) => candidate.title)
+          .join(", ")}.`,
+      );
+      return this.requireUpdatedMission(mission.id);
     }
 
-    await this.missionService.addNotification(mission.id, result.data);
+    await this.startTask(mission, task);
+    const currentMission = await this.requireUpdatedMission(mission.id);
+    const result = await this.recommendationAgent.run({
+      mission: currentMission,
+      objective: "Rank options using persisted provider evidence only.",
+    });
+    if (result.status === "COMPLETED" && result.data) {
+      await this.missionService.addRecommendations(mission.id, result.data);
+      await this.completeTask(mission.id, task, result.summary);
+      await this.missionService.addTimelineEntry(mission.id, {
+        taskId: task.id,
+        kind: "RECOMMENDATION_GENERATED",
+        message: result.summary,
+      });
+    } else {
+      await this.blockTask(mission.id, task, result.summary);
+    }
+    return this.requireUpdatedMission(mission.id);
+  }
+
+  private async finalizeMission(mission: Mission): Promise<Mission> {
+    const allRequiredComplete =
+      mission.tasks.length > 0 &&
+      mission.tasks
+        .filter((task) => task.required)
+        .every((task) => task.status === "COMPLETED");
+    if (!allRequiredComplete || mission.status === "READY") return mission;
+
+    await this.missionService.transitionMission(mission.id, "READY");
+    await this.missionService.addTimelineEntry(mission.id, {
+      kind: "STATUS_CHANGED",
+      message: "Mission reached READY after all required workflow tasks completed.",
+    });
+    const notification = await this.notificationAgent.run({
+      mission,
+      objective: "Notify the operator that verified mission work is complete.",
+      context: { stage: "MISSION_ANALYSIS_COMPLETED" },
+    });
+    if (notification.status === "COMPLETED" && notification.data) {
+      await this.missionService.addNotification(mission.id, notification.data);
+    }
+    return this.requireUpdatedMission(mission.id);
+  }
+
+  private async startTask(mission: Mission, task: Task): Promise<void> {
+    await this.missionService.updateTaskExecution(task.id, {
+      status: "IN_PROGRESS",
+      blockedReason: null,
+      startedAt: new Date(),
+      completedAt: null,
+    });
+    await this.missionService.addTimelineEntry(mission.id, {
+      taskId: task.id,
+      kind: "TASK_STARTED",
+      message: `${task.title} started.`,
+    });
+  }
+
+  private async completeTask(
+    missionId: string,
+    task: Task,
+    summary: string,
+  ): Promise<void> {
+    await this.missionService.updateTaskExecution(task.id, {
+      status: "COMPLETED",
+      blockedReason: null,
+      completedAt: new Date(),
+    });
+    await this.missionService.addTimelineEntry(missionId, {
+      taskId: task.id,
+      kind: "TASK_COMPLETED",
+      message: `${task.title} completed. ${summary}`,
+    });
+  }
+
+  private async blockTask(
+    missionId: string,
+    task: Task,
+    reason: string,
+  ): Promise<void> {
+    await this.missionService.updateTaskExecution(task.id, {
+      status: "BLOCKED",
+      blockedReason: reason,
+      completedAt: null,
+    });
+    await this.missionService.addTimelineEntry(missionId, {
+      taskId: task.id,
+      kind: "TASK_BLOCKED",
+      message: `${task.title} blocked. ${reason}`,
+    });
+  }
+
+  private async failTask(
+    missionId: string,
+    task: Task,
+    reason: string,
+  ): Promise<void> {
+    await this.missionService.updateTaskExecution(task.id, {
+      status: "FAILED",
+      blockedReason: reason,
+      completedAt: null,
+    });
+    await this.missionService.addTimelineEntry(missionId, {
+      taskId: task.id,
+      kind: "TASK_FAILED",
+      message: `${task.title} failed. ${reason}`,
+    });
+  }
+
+  private async persistEvidence(
+    missionId: string,
+    task: Task,
+    result: ResearchData,
+  ): Promise<void> {
+    await this.missionService.addResearchResult(missionId, {
+      providerId: result.providerId,
+      capability: result.capability,
+      taskKey: task.key,
+      summary: result.summary,
+      data: result.data,
+      sourceUrls: result.sourceUrls,
+      retrievedAt: result.retrievedAt,
+    });
+    await this.missionService.addTimelineEntry(missionId, {
+      taskId: task.id,
+      kind: "EVIDENCE_STORED",
+      message: `Stored ${result.capability} evidence from ${result.providerId}.`,
+    });
+  }
+
+  private async ensureMissionCreatedEvent(mission: Mission): Promise<void> {
+    if (mission.timeline.some((entry) => entry.kind === "MISSION_CREATED")) {
+      return;
+    }
+    await this.missionService.addTimelineEntry(mission.id, {
+      kind: "MISSION_CREATED",
+      message: `Mission created: ${mission.goal}`,
+    });
+  }
+
+  private async appendTimelineOnce(
+    mission: Mission,
+    kind: Mission["timeline"][number]["kind"],
+    message: string,
+  ): Promise<void> {
+    if (
+      mission.timeline.some(
+        (entry) => entry.kind === kind && entry.message === message,
+      )
+    ) {
+      return;
+    }
+    await this.missionService.addTimelineEntry(mission.id, { kind, message });
   }
 
   private async requireUpdatedMission(id: string): Promise<Mission> {
@@ -221,10 +344,23 @@ export class MissionOrchestrator {
   }
 }
 
-function findResult(mission: Mission, capability: string) {
-  return mission.researchResults.find(
-    (result) => result.capability === capability,
-  );
+function toCreateTask(definition: WorkflowTaskDefinition) {
+  return {
+    key: definition.key,
+    title: definition.title,
+    description: definition.description,
+    capability: definition.capability,
+    sequence: definition.sequence,
+    required: definition.required,
+  };
+}
+
+function findTask(mission: Mission, capability: string): Task | undefined {
+  return mission.tasks.find((task) => task.capability === capability);
+}
+
+function bySequence(left: Task, right: Task): number {
+  return left.sequence - right.sequence;
 }
 
 function humanize(value: string): string {

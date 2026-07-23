@@ -21,14 +21,17 @@ DRAFT -> ACTIVE -> READY
 ```
 
 `DRAFT` means the record exists but has not started execution. `ACTIVE` means
-research and planning may proceed. `READY` means the mission has completed its
-planned work. A ready mission reports `100` percent progress; otherwise progress
-is the percentage of completed tasks.
+workflow execution is in progress or blocked on input/providers. `READY` means
+all required workflow tasks completed. A READY mission can return to ACTIVE only
+when new context or an explicit exploration action creates new work.
 
 ## Task
 
-A task belongs to one mission and has `NOT_STARTED`, `IN_PROGRESS`, or
-`COMPLETED` status. Tasks are the Phase 1 input to progress calculation.
+A task belongs to one mission and has `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`,
+`FAILED`, or `COMPLETED` status. Each task stores a stable workflow key,
+capability, description, sequence, required/optional flag, blocking reason, and
+execution timestamps. Progress is the percentage of all workflow tasks that are
+actually `COMPLETED`; blocked and failed tasks never inflate progress.
 
 ## Recommendation
 
@@ -49,20 +52,23 @@ resume invocations idempotent.
 
 ## TimelineEntry
 
-An immutable event in mission history. The current event kinds are mission
-creation, lifecycle changes, task completion, and notes.
+An immutable event in mission history. Events now include mission/workflow
+creation, task start/completion/block/failure, evidence storage, recommendation
+generation, user waits, lifecycle changes, and notes.
 
 ## MissionResearchResult
 
-An append-only result produced by an internal agent through an MCP provider. It
-belongs to one mission and stores the provider ID, capability, human-readable
-summary, structured JSON data, and creation time.
+An evidence record produced through an MCP/API provider. It belongs to a stable
+workflow task and stores provider ID, capability, summary, structured data,
+source URLs, retrieval time, and creation time. New results are upserted by
+mission/task key so a resumed task refreshes evidence without duplication.
 
 Phase 3 persists live weather observations here, including Open-Meteo source
 fields and MCP server/tool metadata. Resume invocations reuse existing evidence
 until new research is explicitly needed, rather than replacing mission state or
 creating duplicate missions or results.
 
-Phase 4 stores recommendations, cost estimates, and notifications as separate
-mission-owned records. Agents consume the persisted research evidence, and a
-resume invocation returns the same outputs rather than inserting duplicates.
+Recommendations and cost estimates remain separate mission-owned records, but
+they can now be created only from persisted evidence. If comparable evidence or
+provider-backed prices are missing, the corresponding workflow task is BLOCKED
+and NEXUS returns no template recommendation or assumed budget.

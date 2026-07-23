@@ -2,6 +2,8 @@ import { PrismaClient } from "@prisma/client";
 import type {
   CostEstimate,
   CreateCostEstimateInput,
+  CreateTaskInput,
+  CreateTimelineEntryInput,
   CreateRecommendationInput,
   CreateMissionResearchResultInput,
   CreateMissionInput,
@@ -13,6 +15,8 @@ import type {
   SetupAnswers,
   Task,
   TaskStatus,
+  TimelineEntry,
+  UpdateTaskExecutionInput,
   UpdateMissionInput,
 } from "@nexus/shared";
 import type { MissionRepository } from "./persistence";
@@ -33,6 +37,9 @@ type PrismaCostEstimate = Awaited<
 type PrismaNotification = Awaited<
   ReturnType<PrismaClient["missionNotification"]["findUniqueOrThrow"]>
 >;
+type PrismaTimelineEntry = Awaited<
+  ReturnType<PrismaClient["timelineEntry"]["findUniqueOrThrow"]>
+>;
 
 const missionIncludes = {
   tasks: true,
@@ -40,6 +47,7 @@ const missionIncludes = {
   recommendations: { orderBy: { rank: "asc" as const } },
   costEstimates: { orderBy: { createdAt: "asc" as const } },
   notifications: { orderBy: { createdAt: "asc" as const } },
+  timeline: { orderBy: { occurredAt: "asc" as const } },
 };
 
 export class PrismaMissionRepository implements MissionRepository {
@@ -90,17 +98,30 @@ export class PrismaMissionRepository implements MissionRepository {
     return toMission(mission);
   }
 
-  async createTask(missionId: string, title: string): Promise<Task> {
+  async createTask(missionId: string, input: CreateTaskInput): Promise<Task> {
     return toTask(
-      await this.prisma.task.create({ data: { missionId, title } }),
+      await this.prisma.task.upsert({
+        where: { missionId_key: { missionId, key: input.key } },
+        create: { missionId, ...input },
+        update: {
+          title: input.title,
+          description: input.description,
+          capability: input.capability,
+          sequence: input.sequence,
+          required: input.required,
+        },
+      }),
     );
   }
 
-  async updateTaskStatus(taskId: string, status: TaskStatus): Promise<Task> {
+  async updateTaskExecution(
+    taskId: string,
+    input: UpdateTaskExecutionInput,
+  ): Promise<Task> {
     return toTask(
       await this.prisma.task.update({
         where: { id: taskId },
-        data: { status },
+        data: input,
       }),
     );
   }
@@ -109,16 +130,27 @@ export class PrismaMissionRepository implements MissionRepository {
     missionId: string,
     input: CreateMissionResearchResultInput,
   ): Promise<MissionResearchResult> {
+    const data = {
+      providerId: input.providerId,
+      capability: input.capability,
+      taskKey: input.taskKey,
+      summary: input.summary,
+      dataJson: JSON.stringify(input.data),
+      sourceUrlsJson: JSON.stringify(input.sourceUrls ?? []),
+      retrievedAt: input.retrievedAt ?? new Date(),
+    };
     return toResearchResult(
-      await this.prisma.missionResearchResult.create({
-        data: {
-          missionId,
-          providerId: input.providerId,
-          capability: input.capability,
-          summary: input.summary,
-          dataJson: JSON.stringify(input.data),
-        },
-      }),
+      input.taskKey
+        ? await this.prisma.missionResearchResult.upsert({
+            where: {
+              missionId_taskKey: { missionId, taskKey: input.taskKey },
+            },
+            create: { missionId, ...data },
+            update: data,
+          })
+        : await this.prisma.missionResearchResult.create({
+            data: { missionId, ...data },
+          }),
     );
   }
 
@@ -164,6 +196,32 @@ export class PrismaMissionRepository implements MissionRepository {
       }),
     );
   }
+
+  async createTimelineEntry(
+    missionId: string,
+    input: CreateTimelineEntryInput,
+  ): Promise<TimelineEntry> {
+    return toTimelineEntry(
+      await this.prisma.timelineEntry.create({
+        data: {
+          missionId,
+          taskId: input.taskId,
+          kind: input.kind,
+          message: input.message,
+        },
+      }),
+    );
+  }
+
+  async resetMissionOutputs(missionId: string): Promise<void> {
+    await this.prisma.$transaction([
+      this.prisma.task.deleteMany({ where: { missionId } }),
+      this.prisma.missionResearchResult.deleteMany({ where: { missionId } }),
+      this.prisma.recommendation.deleteMany({ where: { missionId } }),
+      this.prisma.costEstimate.deleteMany({ where: { missionId } }),
+      this.prisma.missionNotification.deleteMany({ where: { missionId } }),
+    ]);
+  }
 }
 
 function toMission(
@@ -173,6 +231,7 @@ function toMission(
     recommendations: PrismaRecommendation[];
     costEstimates: PrismaCostEstimate[];
     notifications: PrismaNotification[];
+    timeline: PrismaTimelineEntry[];
   },
 ): Mission {
   return {
@@ -188,6 +247,7 @@ function toMission(
     recommendations: mission.recommendations.map(toRecommendation),
     costEstimates: mission.costEstimates.map(toCostEstimate),
     notifications: mission.notifications.map(toNotification),
+    timeline: mission.timeline.map(toTimelineEntry),
     createdAt: mission.createdAt,
     updatedAt: mission.updatedAt,
   };
@@ -234,8 +294,11 @@ function toResearchResult(
     missionId: result.missionId,
     providerId: result.providerId,
     capability: result.capability,
+    taskKey: result.taskKey,
     summary: result.summary,
     data: JSON.parse(result.dataJson) as Record<string, unknown>,
+    sourceUrls: JSON.parse(result.sourceUrlsJson) as string[],
+    retrievedAt: result.retrievedAt,
     createdAt: result.createdAt,
   };
 }
@@ -244,10 +307,29 @@ function toTask(task: PrismaTask): Task {
   return {
     id: task.id,
     missionId: task.missionId,
+    key: task.key ?? task.id,
     title: task.title,
+    description: task.description,
+    capability: task.capability,
+    sequence: task.sequence,
+    required: task.required,
     status: task.status as TaskStatus,
+    blockedReason: task.blockedReason,
     dueAt: task.dueAt,
+    startedAt: task.startedAt,
+    completedAt: task.completedAt,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
+  };
+}
+
+function toTimelineEntry(entry: PrismaTimelineEntry): TimelineEntry {
+  return {
+    id: entry.id,
+    missionId: entry.missionId,
+    taskId: entry.taskId,
+    kind: entry.kind as TimelineEntry["kind"],
+    message: entry.message,
+    occurredAt: entry.occurredAt,
   };
 }

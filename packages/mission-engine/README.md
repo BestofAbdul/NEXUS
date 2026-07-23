@@ -1,7 +1,8 @@
 # @nexus/mission-engine
 
 The single responsibility of this package is to own mission lifecycle rules,
-progress calculation, and persistence through exported interfaces.
+task-derived progress, workflow task/evidence/timeline persistence, and
+repository interfaces.
 
 ## Commands
 

@@ -44,10 +44,13 @@ export type NearbyPlaces = z.infer<typeof nearbyPlacesSchema>;
 
 export class OpenStreetMapPlacesProvider implements MCPProvider {
   readonly id = "openstreetmap-nearby-places";
-  readonly capabilities = ["places"] as const;
+  readonly capabilities = ["places", "transportation"] as const;
 
   async invoke(request: MCPRequest): Promise<MCPResponse<NearbyPlaces>> {
-    if (request.capability !== "places" || request.operation !== "nearby") {
+    if (
+      !["places", "transportation"].includes(request.capability) ||
+      request.operation !== "nearby"
+    ) {
       return {
         ok: false,
         error: `Unsupported places request: ${request.capability}/${request.operation}`,
@@ -75,7 +78,10 @@ export class OpenStreetMapPlacesProvider implements MCPProvider {
       await server.connect(serverTransport);
       await client.connect(clientTransport);
       const result = await client.callTool({
-        name: "find_nearby_places",
+        name:
+          request.capability === "transportation"
+            ? "find_nearby_transport"
+            : "find_nearby_places",
         arguments: { latitude, longitude },
       });
 
@@ -96,7 +102,10 @@ export class OpenStreetMapPlacesProvider implements MCPProvider {
           transport: "in-memory",
           serverName: serverVersion?.name,
           serverVersion: serverVersion?.version,
-          tool: "find_nearby_places",
+          tool:
+            request.capability === "transportation"
+              ? "find_nearby_transport"
+              : "find_nearby_places",
         },
       };
     } catch (error) {
@@ -145,14 +154,45 @@ function createPlacesServer(): McpServer {
     },
   );
 
+  server.registerTool(
+    "find_nearby_transport",
+    {
+      description:
+        "Return named airports, train stations, bus stations, and transit stops near coordinates.",
+      inputSchema: {
+        latitude: z.number().min(-90).max(90),
+        longitude: z.number().min(-180).max(180),
+      },
+      outputSchema: nearbyPlacesShape,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+    },
+    async ({ latitude, longitude }) => {
+      const places = await fetchNearbyPlaces(latitude, longitude, [
+        "train station",
+        "bus station",
+        "subway station",
+        "airport",
+      ]);
+      return {
+        content: [{ type: "text", text: JSON.stringify(places) }],
+        structuredContent: places,
+      };
+    },
+  );
+
   return server;
 }
 
 async function fetchNearbyPlaces(
   latitude: number,
   longitude: number,
+  categories = ["museum", "tourist attraction", "park", "art gallery"],
 ): Promise<NearbyPlaces> {
-  const categories = ["museum", "tourist attraction", "park", "art gallery"];
   const searches = await Promise.all(
     categories.map(async (category) => ({
       category,

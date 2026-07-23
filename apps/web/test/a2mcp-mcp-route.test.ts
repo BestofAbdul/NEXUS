@@ -3,11 +3,7 @@ import test from "node:test";
 import { PrismaClient } from "@prisma/client";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import {
-  DELETE,
-  GET,
-  POST,
-} from "../app/api/mcp/route.js";
+import { DELETE, GET, POST } from "../app/api/mcp/route.js";
 
 const prisma = new PrismaClient();
 const createdMissionIds = new Set<string>();
@@ -18,11 +14,10 @@ test.after(async () => {
       where: { id: { in: [...createdMissionIds] } },
     });
   }
-
   await prisma.$disconnect();
 });
 
-test("exposes mission create and resume through Streamable HTTP MCP", async () => {
+test("exposes resumable evidence workflows through Streamable HTTP MCP", async () => {
   const client = new Client({
     name: "nexus-mcp-route-test",
     version: "1.0.0",
@@ -34,12 +29,8 @@ test("exposes mission create and resume through Streamable HTTP MCP", async () =
 
   try {
     await client.connect(transport);
-
     const tools = await client.listTools();
-    assert.deepEqual(
-      tools.tools.map((tool) => tool.name),
-      ["nexus_mission"],
-    );
+    assert.deepEqual(tools.tools.map((tool) => tool.name), ["nexus_mission"]);
 
     const createdResult = await client.callTool({
       name: "nexus_mission",
@@ -48,7 +39,8 @@ test("exposes mission create and resume through Streamable HTTP MCP", async () =
         missionType: "NEW_JOB",
         context: {
           targetRole: "Senior Platform Engineer",
-          preferences: "Remote-first, TypeScript, and infrastructure ownership",
+          location: "Remote Europe",
+          preferences: "Remote-first and infrastructure ownership",
         },
       },
     });
@@ -57,17 +49,17 @@ test("exposes mission create and resume through Streamable HTTP MCP", async () =
     createdMissionIds.add(created.missionId);
 
     assert.equal(created.accepted, true);
-    assert.equal(created.results.length, 2);
-    assert.equal(created.recommendations.length, 3);
-    assert.equal(created.tasks.length, 3);
-    assert.ok(created.costBreakdown.total > 0);
-    assert.match(
-      JSON.stringify(created.recommendations),
-      /Senior Platform Engineer/,
-    );
-    assert.match(JSON.stringify(created.results), /Remote-first/);
+    assert.equal(created.missionType, "NEW_JOB");
+    assert.equal(created.results.length, 1);
+    assert.equal(created.recommendations.length, 0);
+    assert.equal(created.costBreakdown.total, 0);
+    assert.equal(created.tasks.length, 5);
+    assert.ok(created.timeline.length > 0);
 
-    const missionCountAfterCreate = await prisma.mission.count();
+    const missionCount = await prisma.mission.count();
+    const taskCount = await prisma.task.count({
+      where: { missionId: created.missionId },
+    });
     const resumedResult = await client.callTool({
       name: "nexus_mission",
       arguments: {
@@ -77,26 +69,11 @@ test("exposes mission create and resume through Streamable HTTP MCP", async () =
     });
     assert.equal(resumedResult.isError, undefined);
     const resumed = readStructuredMission(resumedResult.structuredContent);
-
     assert.equal(resumed.missionId, created.missionId);
-    assert.equal(await prisma.mission.count(), missionCountAfterCreate);
+    assert.equal(await prisma.mission.count(), missionCount);
     assert.equal(
-      await prisma.missionResearchResult.count({
-        where: { missionId: created.missionId },
-      }),
-      2,
-    );
-    assert.equal(
-      await prisma.recommendation.count({
-        where: { missionId: created.missionId },
-      }),
-      3,
-    );
-    assert.equal(
-      await prisma.costEstimate.count({
-        where: { missionId: created.missionId },
-      }),
-      4,
+      await prisma.task.count({ where: { missionId: created.missionId } }),
+      taskCount,
     );
   } finally {
     await client.close();
@@ -108,27 +85,21 @@ async function routeFetch(
   init?: RequestInit,
 ): Promise<Response> {
   const request = new Request(input, init);
-
-  if (request.method === "POST") {
-    return POST(request);
-  }
-  if (request.method === "GET") {
-    return GET(request);
-  }
-  if (request.method === "DELETE") {
-    return DELETE(request);
-  }
-
+  if (request.method === "POST") return POST(request);
+  if (request.method === "GET") return GET(request);
+  if (request.method === "DELETE") return DELETE(request);
   return new Response(null, { status: 405 });
 }
 
 interface MissionToolResponse {
   accepted: boolean;
   missionId: string;
+  missionType: string;
   results: unknown[];
   recommendations: unknown[];
   costBreakdown: { total: number };
   tasks: unknown[];
+  timeline: unknown[];
 }
 
 function readStructuredMission(value: unknown): MissionToolResponse {

@@ -1,6 +1,8 @@
 import type {
   CostEstimate,
   CreateCostEstimateInput,
+  CreateTaskInput,
+  CreateTimelineEntryInput,
   CreateRecommendationInput,
   CreateMissionResearchResultInput,
   CreateMissionInput,
@@ -10,6 +12,8 @@ import type {
   MissionStatus,
   Recommendation,
   Task,
+  TimelineEntry,
+  UpdateTaskExecutionInput,
   UpdateMissionInput,
 } from "@nexus/shared";
 
@@ -18,8 +22,11 @@ export interface MissionRepository {
   findById(id: string): Promise<Mission | null>;
   update(id: string, input: UpdateMissionInput): Promise<Mission>;
   updateStatus(id: string, status: MissionStatus): Promise<Mission>;
-  createTask(missionId: string, title: string): Promise<Task>;
-  updateTaskStatus(taskId: string, status: Task["status"]): Promise<Task>;
+  createTask(missionId: string, input: CreateTaskInput): Promise<Task>;
+  updateTaskExecution(
+    taskId: string,
+    input: UpdateTaskExecutionInput,
+  ): Promise<Task>;
   createResearchResult(
     missionId: string,
     input: CreateMissionResearchResultInput,
@@ -36,4 +43,9 @@ export interface MissionRepository {
     missionId: string,
     message: string,
   ): Promise<MissionNotification>;
+  createTimelineEntry(
+    missionId: string,
+    input: CreateTimelineEntryInput,
+  ): Promise<TimelineEntry>;
+  resetMissionOutputs(missionId: string): Promise<void>;
 }

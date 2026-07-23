@@ -1,6 +1,8 @@
 import type {
   CostEstimate,
   CreateCostEstimateInput,
+  CreateTaskInput,
+  CreateTimelineEntryInput,
   CreateRecommendationInput,
   CreateMissionResearchResultInput,
   CreateMissionInput,
@@ -10,6 +12,8 @@ import type {
   MissionStatus,
   Recommendation,
   Task,
+  TimelineEntry,
+  UpdateTaskExecutionInput,
   UpdateMissionInput,
 } from "@nexus/shared";
 import { assertMissionTransition, calculateMissionProgress } from "./lifecycle";
@@ -37,13 +41,20 @@ export class MissionService {
     return this.withProgress(await this.repository.updateStatus(id, nextStatus));
   }
 
-  async addTask(missionId: string, title: string): Promise<Task> {
+  async addTask(missionId: string, input: CreateTaskInput): Promise<Task> {
     await this.requireMission(missionId);
-    return this.repository.createTask(missionId, title);
+    return this.repository.createTask(missionId, input);
   }
 
   updateTaskStatus(taskId: string, status: Task["status"]): Promise<Task> {
-    return this.repository.updateTaskStatus(taskId, status);
+    return this.repository.updateTaskExecution(taskId, { status });
+  }
+
+  updateTaskExecution(
+    taskId: string,
+    input: UpdateTaskExecutionInput,
+  ): Promise<Task> {
+    return this.repository.updateTaskExecution(taskId, input);
   }
 
   async addResearchResult(
@@ -76,6 +87,19 @@ export class MissionService {
   ): Promise<MissionNotification> {
     await this.requireMission(missionId);
     return this.repository.createNotification(missionId, message);
+  }
+
+  async addTimelineEntry(
+    missionId: string,
+    input: CreateTimelineEntryInput,
+  ): Promise<TimelineEntry> {
+    await this.requireMission(missionId);
+    return this.repository.createTimelineEntry(missionId, input);
+  }
+
+  async resetMissionOutputs(missionId: string): Promise<void> {
+    await this.requireMission(missionId);
+    await this.repository.resetMissionOutputs(missionId);
   }
 
   private async requireMission(id: string): Promise<Mission> {

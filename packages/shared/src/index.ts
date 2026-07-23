@@ -16,18 +16,42 @@ export const missionStatuses = ["DRAFT", "ACTIVE", "READY"] as const;
 
 export type MissionStatus = (typeof missionStatuses)[number];
 
-export const taskStatuses = ["NOT_STARTED", "IN_PROGRESS", "COMPLETED"] as const;
+export const taskStatuses = [
+  "NOT_STARTED",
+  "IN_PROGRESS",
+  "BLOCKED",
+  "FAILED",
+  "COMPLETED",
+] as const;
 
 export type TaskStatus = (typeof taskStatuses)[number];
 
 export type SetupAnswers = Record<string, string>;
 
+export interface WorkflowTaskDefinition {
+  key: string;
+  title: string;
+  description: string;
+  capability: string;
+  sequence: number;
+  required: boolean;
+  inputKeys: string[];
+}
+
 export interface Task {
   id: string;
   missionId: string;
+  key: string;
   title: string;
+  description: string;
+  capability: string;
+  sequence: number;
+  required: boolean;
   status: TaskStatus;
+  blockedReason: string | null;
   dueAt: Date | null;
+  startedAt: Date | null;
+  completedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -62,7 +86,19 @@ export interface MissionNotification {
 export interface TimelineEntry {
   id: string;
   missionId: string;
-  kind: "MISSION_CREATED" | "STATUS_CHANGED" | "TASK_COMPLETED" | "NOTE";
+  taskId: string | null;
+  kind:
+    | "MISSION_CREATED"
+    | "WORKFLOW_CREATED"
+    | "STATUS_CHANGED"
+    | "TASK_STARTED"
+    | "TASK_COMPLETED"
+    | "TASK_BLOCKED"
+    | "TASK_FAILED"
+    | "EVIDENCE_STORED"
+    | "RECOMMENDATION_GENERATED"
+    | "WAITING_FOR_USER"
+    | "NOTE";
   message: string;
   occurredAt: Date;
 }
@@ -72,8 +108,11 @@ export interface MissionResearchResult {
   missionId: string;
   providerId: string;
   capability: string;
+  taskKey: string | null;
   summary: string;
   data: Record<string, unknown>;
+  sourceUrls: string[];
+  retrievedAt: Date;
   createdAt: Date;
 }
 
@@ -90,6 +129,7 @@ export interface Mission {
   recommendations: Recommendation[];
   costEstimates: CostEstimate[];
   notifications: MissionNotification[];
+  timeline: TimelineEntry[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -110,9 +150,37 @@ export interface UpdateMissionInput {
 export interface CreateMissionResearchResultInput {
   providerId: string;
   capability: string;
+  taskKey?: string;
   summary: string;
   data: Record<string, unknown>;
+  sourceUrls?: string[];
+  retrievedAt?: Date;
 }
+
+export interface CreateTaskInput
+  extends Pick<
+    WorkflowTaskDefinition,
+    | "key"
+    | "title"
+    | "description"
+    | "capability"
+    | "sequence"
+    | "required"
+  > {}
+
+export interface UpdateTaskExecutionInput {
+  status: TaskStatus;
+  blockedReason?: string | null;
+  startedAt?: Date | null;
+  completedAt?: Date | null;
+}
+
+export type CreateTimelineEntryInput = Pick<
+  TimelineEntry,
+  "kind" | "message"
+> & {
+  taskId?: string | null;
+};
 
 export type CreateRecommendationInput = Pick<
   Recommendation,
@@ -129,11 +197,19 @@ export interface A2MCPMissionRequest {
   missionType?: MissionType;
   missionId?: string;
   context?: SetupAnswers;
+  action?: A2MCPMissionAction;
+}
+
+export interface A2MCPMissionAction {
+  type: "EXPLORE_RECOMMENDATION";
+  recommendationId: string;
+  query?: string;
 }
 
 export interface A2MCPMissionResult
-  extends Omit<MissionResearchResult, "createdAt"> {
+  extends Omit<MissionResearchResult, "createdAt" | "retrievedAt"> {
   createdAt: string;
+  retrievedAt: string;
 }
 
 export interface A2MCPRecommendation
@@ -158,15 +234,27 @@ export interface A2MCPNotification
   createdAt: string;
 }
 
-export interface A2MCPTask extends Omit<Task, "createdAt" | "updatedAt" | "dueAt"> {
+export interface A2MCPTask
+  extends Omit<
+    Task,
+    "createdAt" | "updatedAt" | "dueAt" | "startedAt" | "completedAt"
+  > {
   dueAt: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface A2MCPTimelineEntry
+  extends Omit<TimelineEntry, "occurredAt"> {
+  occurredAt: string;
 }
 
 export interface A2MCPMissionResponse {
   accepted: boolean;
   missionId: string;
+  missionType: MissionType;
   status: MissionStatus;
   progress: number;
   currentActivity: string;
@@ -176,4 +264,5 @@ export interface A2MCPMissionResponse {
   costBreakdown: A2MCPCostBreakdown;
   tasks: A2MCPTask[];
   notifications: A2MCPNotification[];
+  timeline: A2MCPTimelineEntry[];
 }

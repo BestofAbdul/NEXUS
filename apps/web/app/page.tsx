@@ -12,6 +12,8 @@ interface SetupField {
   label: string;
   placeholder: string;
   wide?: boolean;
+  inputType?: "text" | "date" | "number";
+  required?: boolean;
 }
 
 interface MissionOption {
@@ -31,16 +33,49 @@ const missionOptions: MissionOption[] = [
     label: "Travel",
     type: "TRAVEL",
     code: "TRV",
-    detail: "Discover places, conditions, priorities, and a practical budget.",
+    detail: "Compare real routes, flight offers, dated weather, and places.",
     goal: "Plan a trip around my interests, time, and budget",
     setupTitle: "Shape the trip you actually want.",
     setupDescription:
-      "NEXUS will check live destination conditions, find notable nearby places, and turn your preferences into a route and readiness plan.",
+      "NEXUS asks only for route details that block research, then checks airports, live flight offers, weather for your selected date, and nearby places.",
     fields: [
-      { key: "destination", label: "Destination", placeholder: "Tokyo" },
-      { key: "dates", label: "Travel dates", placeholder: "October 10-15" },
-      { key: "duration", label: "Number of days", placeholder: "5" },
-      { key: "travelers", label: "Travelers", placeholder: "1" },
+      {
+        key: "origin",
+        label: "Travelling from",
+        placeholder: "Lagos or LOS",
+        required: true,
+      },
+      {
+        key: "destination",
+        label: "City or airport",
+        placeholder: "New York or JFK",
+        required: true,
+      },
+      {
+        key: "departureDate",
+        label: "Departure date",
+        placeholder: "",
+        inputType: "date",
+        required: true,
+      },
+      {
+        key: "returnDate",
+        label: "Return date (optional)",
+        placeholder: "",
+        inputType: "date",
+      },
+      {
+        key: "travelers",
+        label: "Adult travellers",
+        placeholder: "1",
+        inputType: "number",
+      },
+      { key: "cabin", label: "Cabin", placeholder: "Economy" },
+      {
+        key: "directFlights",
+        label: "Direct flights only",
+        placeholder: "true or false",
+      },
       { key: "budget", label: "Working budget", placeholder: "$2,000" },
       {
         key: "preferences",
@@ -51,9 +86,9 @@ const missionOptions: MissionOption[] = [
       },
     ],
     defaults: {
-      destination: "Tokyo",
-      duration: "5",
       travelers: "1",
+      cabin: "Economy",
+      directFlights: "false",
       preferences: "Local food, culture, and a relaxed daily pace",
     },
   },
@@ -288,6 +323,57 @@ interface ApiError {
   error?: { code?: string; message?: string };
 }
 
+const dashboardLabels: Record<
+  MissionType,
+  { evidence: string; tasks: string; budget: string }
+> = {
+  TRAVEL: {
+    evidence: "Flights, stays, weather, entry and destination evidence",
+    tasks: "Travel workflow",
+    budget: "Verified travel prices",
+  },
+  RELOCATE: {
+    evidence: "Immigration, jobs, housing, healthcare and tax evidence",
+    tasks: "Relocation workflow",
+    budget: "Verified relocation costs",
+  },
+  STUDY_ABROAD: {
+    evidence: "Universities, programs, scholarships and visa evidence",
+    tasks: "Study workflow",
+    budget: "Verified study costs",
+  },
+  BUY_RENT_PROPERTY: {
+    evidence: "Listings, mortgage, neighbourhood, safety and tax evidence",
+    tasks: "Property workflow",
+    budget: "Verified property costs",
+  },
+  NEW_JOB: {
+    evidence: "Live roles, employers, salary and authorization evidence",
+    tasks: "Job-search workflow",
+    budget: "Verified career costs",
+  },
+  PLAN_EVENT: {
+    evidence: "Venues, suppliers, weather and transport evidence",
+    tasks: "Event workflow",
+    budget: "Verified event quotes",
+  },
+  MEDICAL_TRIP: {
+    evidence: "Hospitals, doctors, insurance and logistics evidence",
+    tasks: "Medical travel workflow",
+    budget: "Verified logistics costs",
+  },
+  MOVE_GOODS: {
+    evidence: "Carriers, customs, insurance and route evidence",
+    tasks: "Freight workflow",
+    budget: "Verified shipping quotes",
+  },
+  CUSTOM: {
+    evidence: "Mission evidence",
+    tasks: "Custom workflow",
+    budget: "Verified costs",
+  },
+};
+
 export default function MissionControl() {
   const initial = missionOptions[0];
   const [selected, setSelected] = useState<MissionOption>(initial);
@@ -314,7 +400,15 @@ export default function MissionControl() {
     setContext((current) => ({ ...current, [key]: value }));
   }
 
-  async function runMission(event?: FormEvent, resume = false) {
+  async function runMission(
+    event?: FormEvent,
+    resume = false,
+    action?: {
+      type: "EXPLORE_RECOMMENDATION";
+      recommendationId: string;
+      query: string;
+    },
+  ) {
     event?.preventDefault();
     setIsRunning(true);
     setError("");
@@ -331,6 +425,7 @@ export default function MissionControl() {
           missionType: selected.type,
           missionId: resume ? mission?.missionId : undefined,
           context: cleanContext,
+          action,
         }),
       });
       const body = (await response.json()) as
@@ -480,12 +575,14 @@ export default function MissionControl() {
                     />
                   ) : (
                     <input
+                      type={field.inputType ?? "text"}
                       name={field.key}
                       value={context[field.key] ?? ""}
                       onChange={(event) =>
                         updateContext(field.key, event.target.value)
                       }
                       placeholder={field.placeholder}
+                      required={field.required}
                     />
                   )}
                 </label>
@@ -513,6 +610,13 @@ export default function MissionControl() {
           mission={mission}
           isRunning={isRunning}
           onResume={() => runMission(undefined, true)}
+          onExplore={(recommendationId, query) =>
+            runMission(undefined, true, {
+              type: "EXPLORE_RECOMMENDATION",
+              recommendationId,
+              query,
+            })
+          }
         />
       ) : (
         <section className="active-section" aria-labelledby="active-title">
@@ -544,11 +648,14 @@ function MissionOutput({
   mission,
   isRunning,
   onResume,
+  onExplore,
 }: {
   mission: A2MCPMissionResponse;
   isRunning: boolean;
   onResume: () => void;
+  onExplore: (recommendationId: string, query: string) => void;
 }) {
+  const labels = dashboardLabels[mission.missionType];
   return (
     <section
       className="output-section"
@@ -586,11 +693,23 @@ function MissionOutput({
         <span style={{ width: `${mission.progress}%` }} />
       </div>
 
+      {mission.pendingQuestions.length > 0 && (
+        <div className="pending-panel">
+          <span>NEXUS NEEDS THESE ANSWERS</span>
+          <div>
+            {mission.pendingQuestions.map((question) => (
+              <p key={question}>{question}</p>
+            ))}
+          </div>
+          <a href="#launch-mission">Add the details above, then resume</a>
+        </div>
+      )}
+
       <div className="output-grid">
         <OutputPanel
           className="research-panel"
           eyebrow={`${mission.results.length} EVIDENCE ITEMS`}
-          title="What NEXUS learned"
+          title={labels.evidence}
         >
           <div className="research-list">
             {mission.results.map((result) => (
@@ -611,6 +730,19 @@ function MissionOutput({
                   <h4>{recommendation.title}</h4>
                   <p>{recommendation.summary}</p>
                   <small>{recommendation.rationale}</small>
+                  <button
+                    className="explore-button"
+                    disabled={isRunning}
+                    onClick={() =>
+                      onExplore(
+                        recommendation.id,
+                        `Research and verify more options for: ${recommendation.title}`,
+                      )
+                    }
+                    type="button"
+                  >
+                    Explore this with NEXUS
+                  </button>
                 </div>
               </article>
             ))}
@@ -619,7 +751,7 @@ function MissionOutput({
 
         <OutputPanel
           eyebrow={`${mission.tasks.length} NEXT ACTIONS`}
-          title="Mission tasks"
+          title={labels.tasks}
         >
           <div className="task-list">
             {mission.tasks.map((task, index) => (
@@ -627,14 +759,17 @@ function MissionOutput({
                 <span>{String(index + 1).padStart(2, "0")}</span>
                 <div>
                   <strong>{task.title}</strong>
-                  <small>{task.status.replaceAll("_", " ")}</small>
+                  <small>
+                    {task.capability} / {task.status.replaceAll("_", " ")}
+                  </small>
+                  {task.blockedReason && <p>{task.blockedReason}</p>}
                 </div>
               </div>
             ))}
           </div>
         </OutputPanel>
 
-        <OutputPanel eyebrow="INFORMATIONAL ONLY" title="Planning budget">
+        <OutputPanel eyebrow="PROVIDER-BACKED ONLY" title={labels.budget}>
           <div className="cost-list">
             {mission.costBreakdown.lineItems.map((item) => (
               <div className="cost-row" key={item.id}>
@@ -646,6 +781,12 @@ function MissionOutput({
               </div>
             ))}
           </div>
+          {mission.costBreakdown.lineItems.length === 0 && (
+            <p className="panel-empty">
+              No verified price evidence is available yet. NEXUS will not fill
+              this section with assumed costs.
+            </p>
+          )}
           <div className="cost-total">
             <span>ESTIMATED TOTAL</span>
             <strong>
@@ -656,6 +797,21 @@ function MissionOutput({
             </strong>
           </div>
           <p className="disclaimer">{mission.costBreakdown.disclaimer}</p>
+        </OutputPanel>
+
+        <OutputPanel
+          eyebrow={`${mission.timeline.length} OPERATIONS`}
+          title="Mission timeline"
+        >
+          <div className="timeline-list">
+            {mission.timeline.map((entry) => (
+              <div className="timeline-entry" key={entry.id}>
+                <span>{entry.kind.replaceAll("_", " ")}</span>
+                <p>{entry.message}</p>
+                <time>{formatTime(entry.occurredAt)}</time>
+              </div>
+            ))}
+          </div>
         </OutputPanel>
 
         <OutputPanel
@@ -703,7 +859,7 @@ function OutputPanel({
 
 function ResearchResult({ result }: { result: A2MCPMissionResult }) {
   if (result.capability === "mission-plan") {
-    const focusAreas = stringArray(result.data.focusAreas);
+    const focusAreas = stringArray(result.data.workflowCapabilities);
     const preferences = stringArray(result.data.interpretedPreferences);
     return (
       <article className="research-result plan-result">
@@ -719,6 +875,115 @@ function ResearchResult({ result }: { result: A2MCPMissionResult }) {
               ))}
             </ul>
           )}
+          <SourceLine result={result} />
+        </div>
+      </article>
+    );
+  }
+
+  if (result.capability === "airports") {
+    const origin = airportValue(result.data.origin);
+    const destination = airportValue(result.data.destination);
+    return (
+      <article className="research-result route-result">
+        <div>
+          <p>{result.summary}</p>
+          {origin && destination && (
+            <div className="route-line">
+              <div>
+                <strong>{origin.iataCode}</strong>
+                <span>{origin.name}</span>
+              </div>
+              <b aria-hidden="true">TO</b>
+              <div>
+                <strong>{destination.iataCode}</strong>
+                <span>{destination.name}</span>
+              </div>
+            </div>
+          )}
+          <SourceLine result={result} />
+        </div>
+      </article>
+    );
+  }
+
+  if (result.capability === "flights") {
+    const offers = Array.isArray(result.data.offers)
+      ? result.data.offers.filter(isFlightOffer)
+      : [];
+    return (
+      <article className="research-result flight-result">
+        <div>
+          <p>{result.summary}</p>
+          {offers.length > 0 ? (
+            <div className="flight-list">
+              {offers.slice(0, 5).map((offer) => (
+                <div key={offer.id}>
+                  <div>
+                    <strong>
+                      {offer.validatingAirlines.join(" / ") || "Airline"}
+                    </strong>
+                    <span>
+                      {offer.stops === 0
+                        ? "Direct"
+                        : `${offer.stops} stop${offer.stops === 1 ? "" : "s"}`}
+                      {" / "}
+                      {offer.duration}
+                    </span>
+                  </div>
+                  <b>{formatCurrency(offer.totalPrice, offer.currency)}</b>
+                  <small>{formatFlightSchedule(offer)}</small>
+                  <a
+                    href={offer.bookingSearchUrl}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    Search this route externally
+                  </a>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="provider-note">
+              No airfare is shown because NEXUS has no verified live offer to
+              display. It will never manufacture a price.
+            </p>
+          )}
+          <SourceLine result={result} />
+        </div>
+      </article>
+    );
+  }
+
+  if (result.capability === "hotels") {
+    const offers = Array.isArray(result.data.offers)
+      ? result.data.offers.filter(isHotelOffer)
+      : [];
+    return (
+      <article className="research-result flight-result">
+        <div>
+          <p>{result.summary}</p>
+          <div className="flight-list">
+            {offers.slice(0, 5).map((offer) => (
+              <div key={offer.id}>
+                <div>
+                  <strong>{offer.hotelName}</strong>
+                  <span>
+                    {offer.checkInDate} to {offer.checkOutDate}
+                  </span>
+                </div>
+                <b>{formatCurrency(offer.totalPrice, offer.currency)}</b>
+                {offer.roomDescription && <small>{offer.roomDescription}</small>}
+                <a
+                  href={offer.bookingSearchUrl}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  Search this stay externally
+                </a>
+              </div>
+            ))}
+          </div>
           <SourceLine result={result} />
         </div>
       </article>
@@ -748,7 +1013,7 @@ function ResearchResult({ result }: { result: A2MCPMissionResult }) {
     );
   }
 
-  if (result.capability === "knowledge") {
+  if (Array.isArray(result.data.items)) {
     const items = Array.isArray(result.data.items)
       ? result.data.items.filter(isKnowledgeItem)
       : [];
@@ -763,6 +1028,11 @@ function ResearchResult({ result }: { result: A2MCPMissionResult }) {
                 <div>
                   <strong>{item.title}</strong>
                   <small>{item.excerpt}</small>
+                  {item.url && (
+                    <a href={item.url} rel="noreferrer" target="_blank">
+                      Open source
+                    </a>
+                  )}
                 </div>
               </div>
             ))}
@@ -773,10 +1043,34 @@ function ResearchResult({ result }: { result: A2MCPMissionResult }) {
     );
   }
 
+  if (result.capability !== "weather") {
+    return (
+      <article className="research-result plan-result">
+        <div>
+          <p>{result.summary}</p>
+          {result.sourceUrls.length > 0 && (
+            <div className="source-links">
+              {result.sourceUrls.map((url) => (
+                <a href={url} key={url} rel="noreferrer" target="_blank">
+                  Open evidence source
+                </a>
+              ))}
+            </div>
+          )}
+          <SourceLine result={result} />
+        </div>
+      </article>
+    );
+  }
+
+  const forecast =
+    typeof result.data.forecast === "object" && result.data.forecast !== null
+      ? (result.data.forecast as Record<string, unknown>)
+      : undefined;
   const temperature =
-    typeof result.data.temperatureC === "number"
-      ? `${Math.round(result.data.temperatureC)}°C`
-      : "LIVE";
+    typeof forecast?.temperatureMaxC === "number"
+      ? `${Math.round(forecast.temperatureMaxC)}°C`
+      : "DATE";
   const location = [result.data.location, result.data.country]
     .filter((value): value is string => typeof value === "string")
     .join(", ");
@@ -822,13 +1116,108 @@ function isPlace(
 
 function isKnowledgeItem(
   value: unknown,
-): value is { title: string; excerpt: string } {
+): value is { title: string; excerpt: string; url?: string } {
   return (
     typeof value === "object" &&
     value !== null &&
     typeof (value as { title?: unknown }).title === "string" &&
     typeof (value as { excerpt?: unknown }).excerpt === "string"
   );
+}
+
+function airportValue(
+  value: unknown,
+): { iataCode: string; name: string } | undefined {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { iataCode?: unknown }).iataCode === "string" &&
+    typeof (value as { name?: unknown }).name === "string"
+  ) {
+    return value as { iataCode: string; name: string };
+  }
+  return undefined;
+}
+
+function isFlightOffer(
+  value: unknown,
+): value is {
+  id: string;
+  totalPrice: number;
+  currency: string;
+  validatingAirlines: string[];
+  stops: number;
+  duration: string;
+  bookingSearchUrl: string;
+  segments: Array<{
+    departureAirport: string;
+    departureAt: string;
+    arrivalAirport: string;
+    arrivalAt: string;
+  }>;
+} {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { id?: unknown }).id === "string" &&
+    typeof (value as { totalPrice?: unknown }).totalPrice === "number" &&
+    typeof (value as { currency?: unknown }).currency === "string" &&
+    Array.isArray(
+      (value as { validatingAirlines?: unknown }).validatingAirlines,
+    ) &&
+    typeof (value as { stops?: unknown }).stops === "number" &&
+    typeof (value as { duration?: unknown }).duration === "string" &&
+    typeof (value as { bookingSearchUrl?: unknown }).bookingSearchUrl ===
+      "string" &&
+    Array.isArray((value as { segments?: unknown }).segments)
+  );
+}
+
+function isHotelOffer(
+  value: unknown,
+): value is {
+  id: string;
+  hotelName: string;
+  checkInDate: string;
+  checkOutDate: string;
+  totalPrice: number;
+  currency: string;
+  roomDescription: string | null;
+  bookingSearchUrl: string;
+} {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { id?: unknown }).id === "string" &&
+    typeof (value as { hotelName?: unknown }).hotelName === "string" &&
+    typeof (value as { checkInDate?: unknown }).checkInDate === "string" &&
+    typeof (value as { checkOutDate?: unknown }).checkOutDate === "string" &&
+    typeof (value as { totalPrice?: unknown }).totalPrice === "number" &&
+    typeof (value as { currency?: unknown }).currency === "string" &&
+    typeof (value as { bookingSearchUrl?: unknown }).bookingSearchUrl ===
+      "string"
+  );
+}
+
+function formatFlightSchedule(offer: {
+  segments: Array<{
+    departureAirport: string;
+    departureAt: string;
+    arrivalAirport: string;
+    arrivalAt: string;
+  }>;
+}): string {
+  const first = offer.segments[0];
+  const last = offer.segments.at(-1);
+  if (!first || !last) return "Schedule unavailable";
+  return `${first.departureAirport} ${formatDateTime(first.departureAt)} to ${last.arrivalAirport} ${formatDateTime(last.arrivalAt)}`;
+}
+
+function formatDateTime(value: string): string {
+  return new Intl.DateTimeFormat("en", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
 }
 
 function formatDistance(meters: number) {

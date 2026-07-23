@@ -25,4 +25,12 @@ export class MCPProviderRegistry {
 
     return provider;
   }
+
+  resolveAll(capability: string): readonly MCPProvider[] {
+    return this.providers.get(capability) ?? [];
+  }
+
+  has(capability: string): boolean {
+    return (this.providers.get(capability)?.length ?? 0) > 0;
+  }
 }

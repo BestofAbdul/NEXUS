@@ -53,10 +53,42 @@ async function resumeMission(
     );
   }
 
-  const mission =
-    existing.status === "DRAFT"
-      ? await missionService.transitionMission(existing.id, "ACTIVE")
-      : existing;
+  const mergedContext = {
+    ...existing.setupAnswers,
+    ...request.context,
+    ...(request.action
+      ? {
+          explorationRequest: request.action.query?.trim() || "Explore more",
+          explorationRecommendationId: request.action.recommendationId,
+        }
+      : {}),
+  };
+  const shouldUpdateGoal =
+    Boolean(request.context || request.action) && request.goal !== existing.goal;
+  const contextChanged =
+    JSON.stringify(mergedContext) !== JSON.stringify(existing.setupAnswers) ||
+    shouldUpdateGoal;
+  let mission = contextChanged
+    ? await missionService.updateMission(existing.id, {
+        goal: shouldUpdateGoal ? request.goal : existing.goal,
+        title: shouldUpdateGoal
+          ? titleFromGoal(request.goal)
+          : existing.title,
+        setupAnswers: mergedContext,
+      })
+    : existing;
+
+  if (contextChanged) {
+    await missionService.resetMissionOutputs(existing.id);
+    mission = (await missionService.getMission(existing.id))!;
+    if (mission.status === "READY") {
+      mission = await missionService.transitionMission(mission.id, "ACTIVE");
+    }
+  }
+
+  if (mission.status === "DRAFT") {
+    mission = await missionService.transitionMission(mission.id, "ACTIVE");
+  }
 
   return toResponse(await missionOrchestrator.run(mission));
 }
@@ -69,12 +101,14 @@ function toResponse(
   return {
     accepted: true,
     missionId: mission.id,
+    missionType: mission.type,
     status: mission.status,
     progress: mission.progress,
     currentActivity: orchestration.currentActivity,
     pendingQuestions: orchestration.pendingQuestions,
     results: mission.researchResults.map((result) => ({
       ...result,
+      retrievedAt: result.retrievedAt.toISOString(),
       createdAt: result.createdAt.toISOString(),
     })),
     recommendations: mission.recommendations.map((recommendation) => ({
@@ -97,12 +131,18 @@ function toResponse(
     tasks: mission.tasks.map((task) => ({
       ...task,
       dueAt: task.dueAt?.toISOString() ?? null,
+      startedAt: task.startedAt?.toISOString() ?? null,
+      completedAt: task.completedAt?.toISOString() ?? null,
       createdAt: task.createdAt.toISOString(),
       updatedAt: task.updatedAt.toISOString(),
     })),
     notifications: mission.notifications.map((notification) => ({
       ...notification,
       createdAt: notification.createdAt.toISOString(),
+    })),
+    timeline: mission.timeline.map((entry) => ({
+      ...entry,
+      occurredAt: entry.occurredAt.toISOString(),
     })),
   };
 }

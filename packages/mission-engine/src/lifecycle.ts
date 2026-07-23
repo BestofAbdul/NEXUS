@@ -3,7 +3,7 @@ import type { MissionStatus, Task } from "@nexus/shared";
 const transitions: Record<MissionStatus, readonly MissionStatus[]> = {
   DRAFT: ["ACTIVE"],
   ACTIVE: ["READY"],
-  READY: [],
+  READY: ["ACTIVE"],
 };
 
 export function canTransitionMission(

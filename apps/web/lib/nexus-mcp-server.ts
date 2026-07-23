@@ -26,6 +26,14 @@ const missionRequestSchema = {
     .record(z.string(), z.string())
     .optional()
     .describe("Optional mission setup facts as string key-value pairs"),
+  action: z
+    .object({
+      type: z.literal("EXPLORE_RECOMMENDATION"),
+      recommendationId: z.string().min(1),
+      query: z.string().optional(),
+    })
+    .optional()
+    .describe("Optional evidence-expansion action for an existing mission"),
 };
 
 export function createNexusMcpServer(): McpServer {

@@ -62,11 +62,15 @@ https://nexus-production-40fb.up.railway.app/api/a2mcp/mission
 ## What NEXUS Does
 
 - Converts an open-ended goal into a persistent mission.
-- Plans and tracks tasks independently of any single conversation.
+- Generates a different durable workflow for every mission type.
+- Schedules resumable tasks with capability, status, blocking reason, and
+  execution timestamps.
 - Selects MCP providers by capability instead of hardcoded vendor names.
 - Researches requirements, destinations, costs, weather, places, and documents.
-- Synthesizes findings into ranked recommendations and explicit trade-offs.
-- Maintains progress, timeline history, notifications, and pending decisions.
+- Ranks only provider-backed findings; missing evidence blocks recommendations.
+- Builds budgets only from prices returned by providers.
+- Computes progress from completed workflow tasks.
+- Persists every operation in a mission timeline.
 - Exposes mission state through a machine-readable agent contract.
 
 ## Safety Boundary
@@ -112,7 +116,7 @@ capability, keeping providers swappable.
 
 ## Current Status
 
-Phase 4 is complete:
+The current architecture includes:
 
 - pnpm monorepo and Next.js operator control plane
 - shared mission domain model
@@ -126,8 +130,16 @@ Phase 4 is complete:
 - official MCP TypeScript SDK client/server tool invocation
 - live Open-Meteo destination weather research
 - persisted research results returned on create and resume
-- ranked recommendations derived from persisted research evidence
-- informational cost line items and total returned through A2MCP
+- mission-specific workflow definitions for all nine mission types
+- resumable workflow scheduling with blocked/failed/completed task states
+- provider/task provenance and source URLs on stored evidence
+- evidence-only recommendations and budgets with no deterministic allowances
+- persisted mission execution timeline
+- Amadeus flight and hotel adapters
+- Open-Meteo dated forecasts
+- OpenStreetMap destination and local-transport evidence
+- Frankfurter/REST Countries currency evidence
+- Tavily source-preserving research for regulated and broad-market capabilities
 - persisted, idempotent orchestration notifications
 - verified free OKX.AI A2MCP behavior with direct HTTP `200`
 - outward-facing MCP Streamable HTTP `nexus_mission` tool

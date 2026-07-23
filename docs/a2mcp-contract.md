@@ -37,17 +37,25 @@ interface A2MCPMissionRequest {
   missionType?: MissionType;
   missionId?: string;
   context?: Record<string, string>;
+  action?: {
+    type: "EXPLORE_RECOMMENDATION";
+    recommendationId: string;
+    query?: string;
+  };
 }
 ```
 
 NEXUS begins useful work immediately. It asks a question only when the missing
 answer materially changes the research path, recommendation, cost, or safety of
-the mission.
+the mission. Travel currently requires `origin`, `destination`, and an ISO
+`departureDate`. A country-only destination is not treated as sufficient for
+flight search; the response asks for a city or airport.
 
 ```ts
 interface A2MCPMissionResponse {
   accepted: boolean;
   missionId: string;
+  missionType: MissionType;
   status: "DRAFT" | "ACTIVE" | "READY";
   progress: number;
   currentActivity: string;
@@ -57,43 +65,79 @@ interface A2MCPMissionResponse {
   costBreakdown: A2MCPCostBreakdown;
   tasks: A2MCPTask[];
   notifications: A2MCPNotification[];
+  timeline: A2MCPTimelineEntry[];
 }
 ```
 
 Successful creation and resume both return HTTP `200`, as required for a free
 OKX.AI A2MCP service. Resume returns the same `missionId`.
 
-Every mission first runs the Mission Planner against the caller's exact `goal`
-and `context`, persists interpreted preferences and mission-specific tasks, then
-runs external research. Non-Travel missions query Wikimedia background topics
-through MCP. Travel missions additionally call live Open-Meteo weather and
-OpenStreetMap nearby-place tools. `currentActivity` summarizes real orchestration
-state and `results` contains the persisted provider outputs. Responses also
-return ranked `recommendations`, an informational `costBreakdown`, `tasks`, and
-persisted `notifications`:
+Once blocking facts are present, every mission creates its mission-specific
+ordered workflow and schedules durable tasks. Each task moves through
+`NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `FAILED`, or `COMPLETED`; progress is
+computed from completed tasks. Travel resolves airports and searches flight and
+hotel offers through Amadeus, requests Open-Meteo weather for the selected date,
+uses OpenStreetMap for nearby places and transportation, and uses Frankfurter
+plus REST Countries for currency evidence. Broad current research capabilities
+use Tavily and preserve returned source URLs. If Amadeus
+credentials are absent, NEXUS returns a machine-readable
+blocked task and no airfare instead of a fabricated price.
+Dates outside Open-Meteo's forecast horizon return `OUT_OF_RANGE`; current
+weather is never substituted for a future date.
+
+```json
+{
+  "providerId": "amadeus-flight-offers",
+  "capability": "flights",
+  "summary": "Amadeus returned 8 live offer(s) from LOS to JFK...",
+  "data": {
+    "source": "Amadeus",
+    "offers": [
+      {
+        "totalPrice": 1042.31,
+        "currency": "USD",
+        "segments": [],
+        "bookingSearchUrl": "https://www.google.com/travel/flights?...",
+        "bookingLinkType": "SEARCH_LINK_NOT_CONFIRMED_FARE"
+      }
+    ]
+  }
+}
+```
+
+The external URL is a route search link, not a promise that the returned
+Amadeus fare can be booked at that URL. The human must verify the final fare
+with an airline or booking service; NEXUS never books or pays.
+
+Weather evidence is date-specific:
 
 ```json
 {
   "providerId": "open-meteo-weather",
   "capability": "weather",
-  "summary": "Weather in Tokyo, Japan: ...",
+  "summary": "Open-Meteo forecast for New York on 2026-07-25...",
   "data": {
     "source": "Open-Meteo",
-    "temperatureC": 25.2,
-    "observedAt": "2026-07-21T07:00",
+    "requestedDate": "2026-07-25",
+    "status": "FORECAST",
+    "forecast": {
+      "temperatureMaxC": 28.1,
+      "temperatureMinC": 21.4
+    },
     "mcp": {
       "protocol": "MCP",
       "serverName": "nexus-open-meteo-weather",
-      "tool": "get_current_weather"
+      "tool": "get_weather_forecast"
     }
   }
 }
 ```
 
-Each resume invocation runs orchestration again. If the mission already has a
-persisted weather result, the orchestrator returns that real evidence without
-duplicating the mission, repeating the external request, or inserting a duplicate
-result.
+Resume merges new `context` into the persisted mission. If answers or an
+exploration action change, NEXUS reopens a READY mission, clears stale derived
+output, recreates the same workflow, and reruns research for the same
+`missionId`. A plain resume retries blocked tasks and upserts task-owned evidence
+without duplicating the mission, tasks, or results.
 
 Invalid caller input returns HTTP `400`:
 

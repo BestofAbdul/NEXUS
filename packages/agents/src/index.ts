@@ -7,7 +7,7 @@ export interface AgentInput {
 }
 
 export interface AgentResult<TData = unknown> {
-  status: "COMPLETED" | "NEEDS_INPUT" | "FAILED";
+  status: "COMPLETED" | "NEEDS_INPUT" | "BLOCKED" | "FAILED";
   summary: string;
   data?: TData;
   pendingQuestions?: string[];
@@ -25,3 +25,4 @@ export * from "./research-agent";
 export * from "./recommendation-agent";
 export * from "./cost-analysis-agent";
 export * from "./notification-agent";
+export * from "./workflow-definitions";

@@ -21,19 +21,29 @@ model Mission {
   recommendations  Recommendation[]
   costEstimates    CostEstimate[]
   notifications    MissionNotification[]
+  timeline         TimelineEntry[]
 }
 
 model Task {
   id        String   @id @default(cuid())
   missionId String
+  key       String?
   title     String
+  description String @default("")
+  capability String @default("manual")
+  sequence Int @default(0)
+  required Boolean @default(true)
   status    String   @default("NOT_STARTED")
+  blockedReason String?
   dueAt     DateTime?
+  startedAt DateTime?
+  completedAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   mission   Mission  @relation(fields: [missionId], references: [id], onDelete: Cascade)
 
   @@index([missionId])
+  @@unique([missionId, key])
 }
 
 model MissionResearchResult {
@@ -41,12 +51,16 @@ model MissionResearchResult {
   missionId  String
   providerId String
   capability String
+  taskKey    String?
   summary    String
   dataJson   String
+  sourceUrlsJson String @default("[]")
+  retrievedAt DateTime @default(now())
   createdAt  DateTime @default(now())
   mission    Mission  @relation(fields: [missionId], references: [id], onDelete: Cascade)
 
   @@index([missionId])
+  @@unique([missionId, taskKey])
 }
 
 model Recommendation {
@@ -86,4 +100,17 @@ model MissionNotification {
 
   @@index([missionId])
   @@unique([missionId, message])
+}
+
+model TimelineEntry {
+  id         String   @id @default(cuid())
+  missionId  String
+  taskId     String?
+  kind       String
+  message    String
+  occurredAt DateTime @default(now())
+  mission    Mission  @relation(fields: [missionId], references: [id], onDelete: Cascade)
+
+  @@index([missionId, occurredAt])
+  @@index([taskId])
 }

@@ -8,6 +8,8 @@ const knowledgeItemShape = {
   title: z.string(),
   excerpt: z.string(),
   pageId: z.number(),
+  url: z.string(),
+  score: z.number(),
 };
 
 const knowledgeSearchShape = {
@@ -147,10 +149,12 @@ async function fetchKnowledge(query: string): Promise<KnowledgeSearch> {
   return {
     source: "Wikimedia",
     query,
-    items: (payload.query?.search ?? []).map((item) => ({
+    items: (payload.query?.search ?? []).map((item, index) => ({
       title: item.title,
       excerpt: stripHtml(item.snippet),
       pageId: item.pageid,
+      url: `https://en.wikipedia.org/?curid=${item.pageid}`,
+      score: Math.max(0, 1 - index * 0.1),
     })),
   };
 }

@@ -3,6 +3,7 @@ import {
   missionTypes,
   type A2MCPMissionRequest,
   type A2MCPMissionResponse,
+  type A2MCPMissionAction,
   type MissionType,
   type SetupAnswers,
 } from "@nexus/shared";
@@ -48,6 +49,7 @@ interface ValidMissionRequest extends A2MCPMissionRequest {
   goal: string;
   missionType?: MissionType;
   context?: SetupAnswers;
+  action?: A2MCPMissionAction;
 }
 
 type ParseResult =
@@ -115,6 +117,15 @@ async function parseRequest(request: Request): Promise<ParseResult> {
     };
   }
 
+  if (body.action !== undefined && !isMissionAction(body.action)) {
+    return {
+      ok: false,
+      code: "INVALID_ACTION",
+      message:
+        "action must be an EXPLORE_RECOMMENDATION action with a recommendationId.",
+    };
+  }
+
   return {
     ok: true,
     value: {
@@ -123,8 +134,19 @@ async function parseRequest(request: Request): Promise<ParseResult> {
       missionId:
         typeof body.missionId === "string" ? body.missionId.trim() : undefined,
       context: body.context as SetupAnswers | undefined,
+      action: body.action as A2MCPMissionAction | undefined,
     },
   };
+}
+
+function isMissionAction(value: unknown): value is A2MCPMissionAction {
+  return (
+    isRecord(value) &&
+    value.type === "EXPLORE_RECOMMENDATION" &&
+    typeof value.recommendationId === "string" &&
+    value.recommendationId.trim().length > 0 &&
+    (value.query === undefined || typeof value.query === "string")
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
