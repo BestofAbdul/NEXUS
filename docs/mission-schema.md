@@ -51,6 +51,13 @@ An immutable, mission-owned status update emitted by the Notification Agent
 after a real orchestration stage completes. Unique mission/message storage keeps
 resume invocations idempotent.
 
+## MissionConversationMessage
+
+An immutable USER or AGENT message attached to a persistent mission. Messages
+are ordered by creation time, survive mission-output refreshes, and are returned
+by both A2MCP transports so a human or calling agent can continue the same work
+without relying on one browser or chat session.
+
 ## TimelineEntry
 
 An immutable event in mission history. Events now include mission/workflow
@@ -76,3 +83,9 @@ provider-backed prices are missing, the corresponding workflow task is BLOCKED
 and NEXUS returns no template recommendation or assumed budget. The A2MCP
 execution summary lists completed, blocked, and failed tasks; evidence and
 confidence; and pending actions required to unlock unavailable capabilities.
+
+Conversation follow-up evidence uses a stable
+`conversation-<conversationMessageId>` task key. It is added alongside earlier
+mission evidence rather than replacing it. Deep Tavily records retain the
+focused queries, Search responses, extracted source chunks, optional crawled
+pages, source URLs, confidence, and any enrichment warnings.

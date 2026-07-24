@@ -545,3 +545,64 @@ state.
 **Credential handling:** `TAVILY_API_KEY` is required for broad live research
 and must be stored only as a local or Railway secret. Amadeus credentials are
 optional and no longer block Travel missions.
+
+## 2026-07-24 - Persist conversation and bound deep Tavily enrichment
+
+**Decision:** Store every in-mission USER and AGENT message as
+`MissionConversationMessage` and expose it through both REST and the
+`nexus_mission` MCP tool. A `message` is valid only when resuming an existing
+mission. The Conversation Agent can convert clear labeled facts and
+origin/destination/date replies into setup-answer updates, or decompose a
+follow-up into one or two research queries. Corrections refresh task-owned
+derived output but never delete conversation history or create a new mission.
+
+**Tavily flow:** Tavily Search remains the required evidence call. After a
+successful search, NEXUS attempts Extract for at most the top three unique URLs,
+with at most three chunks per source. Explicit deep/verify/compare requests may
+run a second focused Search and Crawl one top source at depth one with an
+eight-page limit. Search evidence remains usable if Extract or Crawl fails; the
+failure is stored as an enrichment warning instead of failing the mission.
+Requests authenticate with the current official `Authorization: Bearer`
+header.
+
+**Rationale:** Durable conversation makes the mission independent of a browser
+session and lets both humans and agents refine the same persisted work. Bounded
+enrichment adds source detail without allowing an unbounded crawl to inflate
+latency or Tavily usage.
+
+**Current parsing boundary:** Setup corrections are deterministic and accept
+clear labels plus common route/date phrasing. Ambiguous prose is not guessed;
+NEXUS retains the message and asks only the remaining required questions. A
+general LLM-backed semantic parser and source-conflict Reasoning Agent remain
+future work.
+
+## 2026-07-24 - Resolve currencies independently and synthesize recommendations
+
+**Country capability:** Add `RestCountriesProvider` behind the generic
+`countries` capability. It calls the keyless REST Countries v3.1 name and alpha
+endpoints first. Because v3.1 is deprecated and the maintained hosted API now
+requires authentication, the provider can fall back to the open upstream
+country dataset maintained in `mledoze/countries`. If the input is a city/state
+such as `benue`, it uses Open-Meteo geocoding only to obtain an ISO country code,
+then resolves the ISO 4217 currency through REST Countries or the fallback
+dataset. The Currency research task resolves both sides before calling
+Frankfurter, so it no longer depends on an airport provider. Failed name
+resolution blocks with the unresolved input rather than guessing a code.
+
+**Evidence query scope:** Replace the all-setup-fields query dump with
+capability-specific field templates. Regulated and route research receives only
+relevant facts. Tavily Search now forwards bounded `include_domains` and
+`exclude_domains`; non-technical mission research excludes programming/Q&A
+domains such as Stack Overflow before results are returned.
+
+**Recommendation boundary:** Item-shaped external evidence is not copied into
+recommendations. The Recommendation Agent requires overlap with persisted
+mission destination/topic terms, removes same-source/topic duplicates,
+synthesizes a short "why this matters" statement, and caps the complete
+recommendation list at three. If no item supports real synthesis, the task
+blocks instead of echoing the Evidence section.
+
+**Operator UI:** Missing optional flight, airport, or hotel providers are shown
+as neutral `NOT AVAILABLE` policy notices and excluded from the operational
+blocked count. This distinguishes an intentional provider boundary from a
+failed task.

@@ -21,6 +21,7 @@ model Mission {
   recommendations  Recommendation[]
   costEstimates    CostEstimate[]
   notifications    MissionNotification[]
+  conversation     MissionConversationMessage[]
   timeline         TimelineEntry[]
 }
 
@@ -101,6 +102,17 @@ model MissionNotification {
 
   @@index([missionId])
   @@unique([missionId, message])
+}
+
+model MissionConversationMessage {
+  id        String   @id @default(cuid())
+  missionId String
+  role      String
+  content   String
+  createdAt DateTime @default(now())
+  mission   Mission  @relation(fields: [missionId], references: [id], onDelete: Cascade)
+
+  @@index([missionId, createdAt])
 }
 
 model TimelineEntry {

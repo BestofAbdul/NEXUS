@@ -65,6 +65,7 @@ test("exposes resumable evidence workflows through Streamable HTTP MCP", async (
       arguments: {
         goal: "Continue the engineering job-search mission",
         missionId: created.missionId,
+        message: "Explain what remains blocked and keep this with the mission.",
       },
     });
     assert.equal(resumedResult.isError, undefined);
@@ -75,6 +76,9 @@ test("exposes resumable evidence workflows through Streamable HTTP MCP", async (
       await prisma.task.count({ where: { missionId: created.missionId } }),
       taskCount,
     );
+    assert.equal(resumed.conversation.length, 2);
+    assert.equal(resumed.conversation[0].role, "USER");
+    assert.equal(resumed.conversation[1].role, "AGENT");
   } finally {
     await client.close();
   }
@@ -99,6 +103,7 @@ interface MissionToolResponse {
   recommendations: unknown[];
   costBreakdown: { total: number };
   tasks: unknown[];
+  conversation: Array<{ role: string; content: string }>;
   timeline: unknown[];
 }
 

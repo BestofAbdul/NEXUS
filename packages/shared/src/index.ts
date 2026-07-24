@@ -28,6 +28,10 @@ export type TaskStatus = (typeof taskStatuses)[number];
 
 export type SetupAnswers = Record<string, string>;
 
+export const conversationRoles = ["USER", "AGENT"] as const;
+
+export type ConversationRole = (typeof conversationRoles)[number];
+
 export interface WorkflowTaskDefinition {
   key: string;
   title: string;
@@ -83,6 +87,14 @@ export interface MissionNotification {
   createdAt: Date;
 }
 
+export interface MissionConversationMessage {
+  id: string;
+  missionId: string;
+  role: ConversationRole;
+  content: string;
+  createdAt: Date;
+}
+
 export interface TimelineEntry {
   id: string;
   missionId: string;
@@ -130,6 +142,7 @@ export interface Mission {
   recommendations: Recommendation[];
   costEstimates: CostEstimate[];
   notifications: MissionNotification[];
+  conversation: MissionConversationMessage[];
   timeline: TimelineEntry[];
   createdAt: Date;
   updatedAt: Date;
@@ -194,12 +207,18 @@ export type CreateCostEstimateInput = Pick<
   "category" | "amount" | "currency" | "notes"
 >;
 
+export type CreateConversationMessageInput = Pick<
+  MissionConversationMessage,
+  "role" | "content"
+>;
+
 export interface A2MCPMissionRequest {
   goal: string;
   missionType?: MissionType;
   missionId?: string;
   context?: SetupAnswers;
   action?: A2MCPMissionAction;
+  message?: string;
 }
 
 export interface A2MCPMissionAction {
@@ -233,6 +252,11 @@ export interface A2MCPCostBreakdown {
 
 export interface A2MCPNotification
   extends Omit<MissionNotification, "createdAt"> {
+  createdAt: string;
+}
+
+export interface A2MCPConversationMessage
+  extends Omit<MissionConversationMessage, "createdAt"> {
   createdAt: string;
 }
 
@@ -294,6 +318,7 @@ export interface A2MCPMissionResponse {
   costBreakdown: A2MCPCostBreakdown;
   tasks: A2MCPTask[];
   notifications: A2MCPNotification[];
+  conversation: A2MCPConversationMessage[];
   timeline: A2MCPTimelineEntry[];
   executionSummary: A2MCPExecutionSummary;
 }

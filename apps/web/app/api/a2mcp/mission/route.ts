@@ -126,6 +126,27 @@ async function parseRequest(request: Request): Promise<ParseResult> {
     };
   }
 
+  if (
+    body.message !== undefined &&
+    (typeof body.message !== "string" ||
+      body.message.trim().length === 0 ||
+      body.message.trim().length > 4_000)
+  ) {
+    return {
+      ok: false,
+      code: "INVALID_MESSAGE",
+      message: "message must be a non-empty string of at most 4000 characters.",
+    };
+  }
+
+  if (body.message !== undefined && body.missionId === undefined) {
+    return {
+      ok: false,
+      code: "MESSAGE_REQUIRES_MISSION",
+      message: "message can be sent only when resuming an existing mission.",
+    };
+  }
+
   return {
     ok: true,
     value: {
@@ -135,6 +156,8 @@ async function parseRequest(request: Request): Promise<ParseResult> {
         typeof body.missionId === "string" ? body.missionId.trim() : undefined,
       context: body.context as SetupAnswers | undefined,
       action: body.action as A2MCPMissionAction | undefined,
+      message:
+        typeof body.message === "string" ? body.message.trim() : undefined,
     },
   };
 }

@@ -3,6 +3,9 @@ import {
   MCPProviderRegistry,
   type AirportRoute,
   type CurrencyEvidence,
+  type CountryResolution,
+  type EvidenceCrawl,
+  type EvidenceExtract,
   type EvidenceSearch,
   type FlightOfferSearch,
   type HotelOfferSearch,
@@ -285,14 +288,48 @@ export class ResearchAgent implements Agent<ResearchData> {
         summary: "Currency research requires origin and destination countries.",
       };
     }
+    const baseResolution = await this.invokeFirst("countries", {
+      capability: "countries",
+      operation: "resolve",
+      input: { name: baseCountry },
+    });
+    if (!baseResolution.ok || !baseResolution.data) {
+      return {
+        status:
+          baseResolution.metadata?.reason === "COUNTRY_NOT_FOUND"
+            ? "BLOCKED"
+            : "FAILED",
+        summary:
+          baseResolution.metadata?.reason === "COUNTRY_NOT_FOUND"
+            ? `Could not resolve origin country or currency from "${baseCountry}".`
+            : `Origin country resolution failed: ${baseResolution.error ?? "unknown provider error"}`,
+      };
+    }
+    const quoteResolution = await this.invokeFirst("countries", {
+      capability: "countries",
+      operation: "resolve",
+      input: { name: quoteCountry },
+    });
+    if (!quoteResolution.ok || !quoteResolution.data) {
+      return {
+        status:
+          quoteResolution.metadata?.reason === "COUNTRY_NOT_FOUND"
+            ? "BLOCKED"
+            : "FAILED",
+        summary:
+          quoteResolution.metadata?.reason === "COUNTRY_NOT_FOUND"
+            ? `Could not resolve destination country or currency from "${quoteCountry}".`
+            : `Destination country resolution failed: ${quoteResolution.error ?? "unknown provider error"}`,
+      };
+    }
+    const base = baseResolution.data as CountryResolution;
+    const quote = quoteResolution.data as CountryResolution;
     const response = await this.invokeFirst("currency", {
       capability: "currency",
       operation: "rate",
       input: {
-        base: answer(input, "homeCurrency"),
-        quote: answer(input, "destinationCurrency"),
-        baseCountry,
-        quoteCountry,
+        base: answer(input, "homeCurrency") ?? base.currencyCode,
+        quote: answer(input, "destinationCurrency") ?? quote.currencyCode,
       },
     });
     if (!response.ok || !response.data) return blockedOrFailed(response);
@@ -300,9 +337,13 @@ export class ResearchAgent implements Agent<ResearchData> {
     return completed(
       response.providerId,
       "currency",
-      `On ${currency.date}, 1 ${currency.base} equalled ${currency.rate} ${currency.quote}.`,
-      currency as unknown as Record<string, unknown>,
-      [currency.sourceUrl, "https://restcountries.com/"],
+      `On ${currency.date}, 1 ${currency.base} equalled ${currency.rate} ${currency.quote}; country metadata resolved ${baseCountry} to ${base.countryName} and ${quoteCountry} to ${quote.countryName}.`,
+      {
+        ...currency,
+        originCountry: base,
+        destinationCountry: quote,
+      },
+      [currency.sourceUrl, base.sourceUrl, quote.sourceUrl],
       0.95,
     );
   }
@@ -349,49 +390,118 @@ export class ResearchAgent implements Agent<ResearchData> {
         summary: `No MCP provider is registered for capability "${capability}".`,
       };
     }
-    const query = buildEvidenceQuery(input, capability);
+    const queries = evidenceQueries(input, capability);
     let lastError = "";
     for (const provider of providers) {
-      const response = await provider.invoke({
-        capability,
-        operation: "search",
-        input: {
-          query,
-          officialOnly: officialEvidenceCapabilities.has(capability),
-        },
-      });
-      if (response.ok && response.data) {
-        const data = response.data as EvidenceSearch | KnowledgeSearch;
-        const items = Array.isArray(data.items) ? data.items : [];
-        const evidenceAnswer =
-          "answer" in data && typeof data.answer === "string"
-            ? data.answer.trim()
-            : "";
-        const sourceUrls = items
-          .map((item) =>
-            typeof item === "object" &&
-            item !== null &&
-            typeof (item as { url?: unknown }).url === "string"
-              ? (item as { url: string }).url
-              : undefined,
-          )
-          .filter((url): url is string => Boolean(url));
-        return completed(
-          provider.id,
+      const searches: Array<EvidenceSearch | KnowledgeSearch> = [];
+      const enrichmentWarnings: string[] = [];
+      for (const query of queries) {
+        const response = await provider.invoke({
           capability,
-          evidenceAnswer ||
-            (items.length > 0
-              ? extractiveEvidenceSummary(items, capability)
-              : `No current sources were returned for ${capability}.`),
-          data as unknown as Record<string, unknown>,
-          sourceUrls,
-          evidenceConfidence(items),
-        );
+          operation: "search",
+          input: {
+            query,
+            officialOnly: officialEvidenceCapabilities.has(capability),
+            excludeDomains: excludedDomainsForCapability(capability),
+          },
+        });
+        if (response.ok && response.data) {
+          searches.push(response.data as EvidenceSearch | KnowledgeSearch);
+          continue;
+        }
+        lastError = response.error ?? lastError;
+        if (searches.length > 0) {
+          enrichmentWarnings.push(
+            `A secondary search could not complete: ${response.error ?? "unknown provider error"}`,
+          );
+          break;
+        }
+        if (response.metadata?.serviceState !== "NOT_CONFIGURED") {
+          return { status: "FAILED", summary: lastError };
+        }
       }
-      lastError = response.error ?? lastError;
-      if (response.metadata?.serviceState !== "NOT_CONFIGURED") {
-        return { status: "FAILED", summary: lastError };
+
+      if (searches.length === 0) continue;
+
+      const items = deduplicateEvidenceItems(searches.flatMap(readItems));
+      const sourceUrls = evidenceSourceUrls(items);
+      const primaryQuery = queries[0]!;
+      let extraction: EvidenceExtract | undefined;
+      let crawl: EvidenceCrawl | undefined;
+
+      if (sourceUrls.length > 0) {
+        const extractResponse = await provider.invoke({
+          capability,
+          operation: "extract",
+          input: {
+            query: primaryQuery,
+            urls: sourceUrls.slice(0, 3),
+          },
+        });
+        if (extractResponse.ok && extractResponse.data) {
+          extraction = extractResponse.data as EvidenceExtract;
+        } else if (!isUnsupportedOperation(extractResponse.error)) {
+          enrichmentWarnings.push(
+            `Source extraction was unavailable: ${extractResponse.error ?? "unknown provider error"}`,
+          );
+        }
       }
+
+      if (booleanValue(input.context?.deepResearch) && sourceUrls[0]) {
+        const crawlResponse = await provider.invoke({
+          capability,
+          operation: "crawl",
+          input: {
+            query: primaryQuery,
+            url: sourceUrls[0],
+          },
+        });
+        if (crawlResponse.ok && crawlResponse.data) {
+          crawl = crawlResponse.data as EvidenceCrawl;
+        } else if (!isUnsupportedOperation(crawlResponse.error)) {
+          enrichmentWarnings.push(
+            `Deep crawl was unavailable: ${crawlResponse.error ?? "unknown provider error"}`,
+          );
+        }
+      }
+
+      const answers = searches
+        .map(readAnswer)
+        .filter((answer): answer is string => Boolean(answer));
+      const allSourceUrls = [
+        ...sourceUrls,
+        ...(extraction?.items.map((item) => item.url) ?? []),
+        ...(crawl?.items.map((item) => item.url) ?? []),
+      ];
+      const summary =
+        citationLinkedSummary(answers, items, capability) ||
+        `No current sources were returned for ${capability}.`;
+
+      return completed(
+        provider.id,
+        capability,
+        summary,
+        {
+          source: provider.id,
+          capability,
+          query: primaryQuery,
+          queries,
+          answer: answers.join(" "),
+          items,
+          searches,
+          extraction: extraction ?? null,
+          crawl: crawl ?? null,
+          verification: {
+            searchCount: searches.length,
+            sourceCount: new Set(allSourceUrls).size,
+            extractedSourceCount: extraction?.items.length ?? 0,
+            crawledPageCount: crawl?.items.length ?? 0,
+            enrichmentWarnings,
+          },
+        },
+        allSourceUrls,
+        evidenceConfidence(items),
+      );
     }
     return {
       status: "BLOCKED",
@@ -502,6 +612,21 @@ function extractiveEvidenceSummary(
     : `Found ${items.length} current source(s) for ${capability}.`;
 }
 
+function citationLinkedSummary(
+  answers: string[],
+  items: Array<Record<string, unknown>>,
+  capability: string,
+): string {
+  if (answers.length > 0) {
+    return answers
+      .slice(0, 2)
+      .map((answer, index) => `${answer} [Evidence set ${index + 1}]`)
+      .join(" ");
+  }
+  const summary = extractiveEvidenceSummary(items, capability);
+  return items.length > 0 ? `${summary} [Sources 1-${items.length}]` : summary;
+}
+
 function evidenceConfidence(items: Array<Record<string, unknown>>): number {
   const scores = items
     .map((item) => item.score)
@@ -531,20 +656,196 @@ function blockedOrFailed(response: {
 }
 
 function buildEvidenceQuery(input: AgentInput, capability: string): string {
-  if (capability === "knowledge") {
-    return [
-      input.mission.goal,
-      input.mission.setupAnswers.desiredOutcome,
-      input.mission.setupAnswers.explorationRequest,
-    ]
-      .filter((value): value is string => Boolean(value?.trim()))
-      .join(" ");
-  }
-  const facts = Object.entries(input.mission.setupAnswers)
-    .filter(([, value]) => value.trim())
-    .map(([key, value]) => `${key}: ${value}`)
-    .join("; ");
-  return `${capability} research for mission "${input.mission.goal}". ${facts}`.trim();
+  const relevantKeys =
+    capabilityQueryFields[capability] ?? capabilityQueryFields.knowledge;
+  const facts = relevantKeys
+    .map((key) => [key, input.mission.setupAnswers[key]?.trim()] as const)
+    .filter((entry): entry is readonly [string, string] => Boolean(entry[1]))
+    .map(([key, value]) => `${humanizeQueryKey(key)}: ${value}`);
+  const fallback =
+    input.mission.setupAnswers.explorationRequest?.trim() ||
+    input.mission.setupAnswers.desiredOutcome?.trim() ||
+    input.mission.goal.trim();
+  return [
+    `Current ${capability.replaceAll("-", " ")} evidence`,
+    facts.length > 0 ? facts.join("; ") : fallback,
+  ]
+    .filter(Boolean)
+    .join(". ");
+}
+
+const capabilityQueryFields: Record<string, string[]> = {
+  visa: ["origin", "movingFrom", "nationality", "destination"],
+  immigration: [
+    "movingFrom",
+    "origin",
+    "nationality",
+    "destination",
+    "workStatus",
+  ],
+  "medical-visa": [
+    "origin",
+    "nationality",
+    "destination",
+    "appointmentType",
+  ],
+  "government-documents": [
+    "origin",
+    "movingFrom",
+    "destination",
+    "nationality",
+  ],
+  jobs: ["targetRole", "workStatus", "location", "destination", "industry"],
+  employers: ["targetRole", "location", "destination", "industry"],
+  salary: ["targetRole", "location", "destination", "experience"],
+  universities: ["destination", "subject", "studyLevel", "intake"],
+  programs: ["destination", "subject", "studyLevel", "intake"],
+  scholarships: ["destination", "subject", "studyLevel", "intake", "budget"],
+  housing: ["destination", "location", "household", "budget", "targetDate"],
+  accommodation: [
+    "destination",
+    "location",
+    "departureDate",
+    "returnDate",
+    "budget",
+  ],
+  properties: [
+    "propertyGoal",
+    "location",
+    "budget",
+    "bedrooms",
+    "moveDate",
+  ],
+  mortgage: ["propertyGoal", "location", "budget"],
+  neighbourhood: ["location", "destination", "priorities"],
+  crime: ["location", "destination"],
+  schools: ["location", "destination", "household", "studyLevel"],
+  healthcare: ["destination", "location", "household", "workStatus"],
+  hospitals: ["destination", "appointmentType", "accessibility"],
+  doctors: ["destination", "appointmentType"],
+  insurance: [
+    "origin",
+    "destination",
+    "appointmentType",
+    "items",
+    "timeline",
+  ],
+  recovery: ["destination", "appointmentType", "accessibility", "dates"],
+  taxes: ["movingFrom", "destination", "workStatus", "propertyGoal"],
+  venues: ["eventType", "location", "date", "guestCount", "budget"],
+  suppliers: ["eventType", "location", "date", "guestCount", "budget"],
+  events: ["eventType", "location", "date", "guestCount"],
+  freight: ["origin", "destination", "items", "timeline", "volume"],
+  customs: ["origin", "destination", "items", "timeline"],
+  transportation: [
+    "origin",
+    "destination",
+    "location",
+    "date",
+    "timeline",
+  ],
+  relocation: [
+    "movingFrom",
+    "destination",
+    "workStatus",
+    "household",
+    "targetDate",
+  ],
+  knowledge: [
+    "desiredOutcome",
+    "explorationRequest",
+    "deadline",
+    "constraints",
+  ],
+};
+
+const nonTechnicalResearchCapabilities = new Set([
+  ...Object.keys(capabilityQueryFields),
+  "weather",
+  "places",
+]);
+
+function excludedDomainsForCapability(capability: string): string[] {
+  return nonTechnicalResearchCapabilities.has(capability)
+    ? [
+        "stackoverflow.com",
+        "stackexchange.com",
+        "superuser.com",
+        "serverfault.com",
+      ]
+    : [];
+}
+
+function humanizeQueryKey(value: string): string {
+  return value
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replaceAll("_", " ")
+    .toLowerCase();
+}
+
+function evidenceQueries(input: AgentInput, capability: string): string[] {
+  const focusedQueries = stringArray(input.context?.queries)
+    .map((query) => query.trim())
+    .filter(Boolean)
+    .slice(0, 2);
+  return focusedQueries.length > 0
+    ? [...new Set(focusedQueries)]
+    : [buildEvidenceQuery(input, capability)];
+}
+
+function readItems(
+  data: EvidenceSearch | KnowledgeSearch,
+): Array<Record<string, unknown>> {
+  return Array.isArray(data.items)
+    ? (data.items as unknown[]).filter(isRecord)
+    : [];
+}
+
+function readAnswer(
+  data: EvidenceSearch | KnowledgeSearch,
+): string | undefined {
+  return "answer" in data && typeof data.answer === "string"
+    ? data.answer.trim() || undefined
+    : undefined;
+}
+
+function evidenceSourceUrls(items: Array<Record<string, unknown>>): string[] {
+  return items
+    .map((item) => (typeof item.url === "string" ? item.url : undefined))
+    .filter((url): url is string => Boolean(url));
+}
+
+function deduplicateEvidenceItems(
+  items: Array<Record<string, unknown>>,
+): Array<Record<string, unknown>> {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key =
+      typeof item.url === "string"
+        ? item.url
+        : JSON.stringify([item.title, item.excerpt]);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function booleanValue(value: unknown): boolean {
+  return value === true;
+}
+
+function isUnsupportedOperation(error: string | undefined): boolean {
+  return error?.startsWith("Unsupported ") ?? false;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function answer(input: AgentInput, key: string): string | undefined {

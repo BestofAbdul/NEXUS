@@ -34,6 +34,13 @@ const missionRequestSchema = {
     })
     .optional()
     .describe("Optional evidence-expansion action for an existing mission"),
+  message: z
+    .string()
+    .trim()
+    .min(1)
+    .max(4_000)
+    .optional()
+    .describe("Free-form in-mission follow-up for an existing mission"),
 };
 
 export function createNexusMcpServer(): McpServer {

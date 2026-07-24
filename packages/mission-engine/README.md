@@ -2,7 +2,7 @@
 
 The single responsibility of this package is to own mission lifecycle rules,
 task-derived progress, workflow task/evidence/timeline persistence, and
-repository interfaces.
+durable conversation persistence, and repository interfaces.
 
 ## Commands
 

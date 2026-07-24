@@ -69,6 +69,10 @@ https://nexus-production-40fb.up.railway.app/api/a2mcp/mission
 - Uses Tavily as the default source-preserving evidence provider for research
   capabilities such as immigration, jobs, universities, housing, healthcare,
   events, relocation, and freight.
+- Continues missions through durable in-mission conversation, including
+  preferences, follow-up research, and clear factual corrections.
+- Enriches Tavily searches with bounded source extraction and an optional
+  depth-one crawl for explicit deep-verification requests.
 - Researches requirements, destinations, costs, weather, places, and documents.
 - Ranks only provider-backed findings; missing evidence blocks recommendations.
 - Builds budgets only from prices returned by providers.
@@ -144,9 +148,17 @@ The current architecture includes:
   credentials are configured
 - Open-Meteo dated forecasts
 - OpenStreetMap destination and local-transport evidence
-- Frankfurter/REST Countries currency evidence
+- REST Countries country/currency resolution plus Frankfurter exchange-rate
+  evidence, including free-text country, city, and state inputs
 - Tavily source-preserving research with evidence-grounded synthesized answers
   and confidence scores
+- capability-specific Tavily queries and mission-domain exclusions
+- at most three distinct, on-topic, synthesized recommendations
+- durable USER/AGENT conversation returned through REST and MCP
+- natural setup-answer continuation and fact correction without duplicating a
+  mission
+- Tavily Search plus top-three Extract enrichment, with bounded Crawl for
+  explicit deep research
 - persisted, idempotent orchestration notifications
 - verified free OKX.AI A2MCP behavior with direct HTTP `200`
 - outward-facing MCP Streamable HTTP `nexus_mission` tool

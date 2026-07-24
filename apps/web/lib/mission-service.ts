@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import {
   CostAnalysisAgent,
+  ConversationAgent,
   MissionPlannerAgent,
   MissionOrchestrator,
   NotificationAgent,
@@ -12,6 +13,7 @@ import {
   AmadeusFlightProvider,
   FrankfurterCurrencyProvider,
   OpenMeteoWeatherProvider,
+  RestCountriesProvider,
   WikimediaKnowledgeProvider,
   OpenStreetMapPlacesProvider,
   TavilyEvidenceProvider,
@@ -45,6 +47,7 @@ export const missionService = new MissionService(
 const configuredProviders: MCPProvider[] = [
   new TavilyEvidenceProvider(),
   new FrankfurterCurrencyProvider(),
+  new RestCountriesProvider(),
   new OpenMeteoWeatherProvider(),
   new WikimediaKnowledgeProvider(),
   new OpenStreetMapPlacesProvider(),
@@ -67,4 +70,5 @@ export const missionOrchestrator = new MissionOrchestrator(
   new RecommendationAgent(),
   new CostAnalysisAgent(),
   new NotificationAgent(),
+  new ConversationAgent(),
 );

@@ -5,6 +5,10 @@ import type {
 } from "@nexus/shared";
 import { MissionService } from "@nexus/mission-engine";
 import { CostAnalysisAgent } from "./cost-analysis-agent";
+import {
+  ConversationAgent,
+  type ConversationDecision,
+} from "./conversation-agent";
 import { MissionPlannerAgent } from "./mission-planner-agent";
 import { NotificationAgent } from "./notification-agent";
 import { RecommendationAgent } from "./recommendation-agent";
@@ -17,6 +21,11 @@ export interface MissionOrchestrationResult {
   pendingQuestions: string[];
 }
 
+export interface MissionOrchestrationOptions {
+  conversationMessage?: string;
+  conversationMessageId?: string;
+}
+
 const internalCapabilities = new Set(["budget", "recommendations"]);
 
 export class MissionOrchestrator {
@@ -27,13 +36,32 @@ export class MissionOrchestrator {
     private readonly recommendationAgent: RecommendationAgent,
     private readonly costAnalysisAgent: CostAnalysisAgent,
     private readonly notificationAgent: NotificationAgent,
+    private readonly conversationAgent: ConversationAgent,
   ) {}
 
-  async run(mission: Mission): Promise<MissionOrchestrationResult> {
+  async run(
+    mission: Mission,
+    options: MissionOrchestrationOptions = {},
+  ): Promise<MissionOrchestrationResult> {
     let workingMission = mission;
+    let setupConversationActivity: string | undefined;
+    let conversationDecision: ConversationDecision | undefined;
     await this.ensureMissionCreatedEvent(workingMission);
 
-    const pendingQuestions = getBlockingQuestions(workingMission);
+    let pendingQuestions = getBlockingQuestions(workingMission);
+    if (options.conversationMessage) {
+      const handled = await this.prepareConversation(
+        workingMission,
+        options.conversationMessage,
+        pendingQuestions,
+      );
+      workingMission = handled.mission;
+      conversationDecision = handled.decision;
+      if (handled.decision.kind !== "RESEARCH") {
+        setupConversationActivity = handled.decision.reply;
+      }
+      pendingQuestions = getBlockingQuestions(workingMission);
+    }
     if (pendingQuestions.length > 0) {
       await this.appendTimelineOnce(
         workingMission,
@@ -44,6 +72,7 @@ export class MissionOrchestrator {
       return {
         mission: workingMission,
         currentActivity:
+          setupConversationActivity ??
           "Mission created. Workflow execution is waiting for required input.",
         pendingQuestions,
       };
@@ -63,6 +92,17 @@ export class MissionOrchestrator {
 
     workingMission = await this.executeBudgetTask(workingMission);
     workingMission = await this.executeRecommendationTask(workingMission);
+    const conversationActivity =
+      options.conversationMessage &&
+      conversationDecision?.kind === "RESEARCH"
+      ? await this.executeConversation(
+          workingMission,
+          options.conversationMessage,
+          options.conversationMessageId,
+          conversationDecision,
+        )
+      : undefined;
+    workingMission = await this.requireUpdatedMission(workingMission.id);
     workingMission = await this.finalizeMission(workingMission);
 
     const pending = workingMission.tasks.filter(
@@ -81,7 +121,9 @@ export class MissionOrchestrator {
     return {
       mission: workingMission,
       currentActivity:
-        workingMission.status === "READY"
+        conversationActivity ??
+        setupConversationActivity ??
+        (workingMission.status === "READY"
           ? blockedCount + failedCount === 0
             ? `${humanize(workingMission.type)} mission is ready from verified evidence.`
             : `${humanize(workingMission.type)} mission is ready with ${completedCount} completed, ${blockedCount} blocked, and ${failedCount} failed task(s).`
@@ -89,9 +131,137 @@ export class MissionOrchestrator {
             ? `${next.title}: ${next.blockedReason}`
             : next
               ? `${next.title} is waiting to run.`
-              : "Mission execution is active.",
+              : "Mission execution is active."),
       pendingQuestions: [],
     };
+  }
+
+  private async prepareConversation(
+    mission: Mission,
+    message: string,
+    pendingQuestions: string[],
+  ): Promise<{ mission: Mission; decision: ConversationDecision }> {
+    const result = await this.conversationAgent.run({
+      mission,
+      objective: "Respond to the user's in-mission message.",
+      context: { message, pendingQuestions },
+    });
+    const decision = result.data ?? {
+      kind: "ASK",
+      reply: result.summary,
+      researchQueries: [],
+      deepResearch: false,
+      contextUpdates: {},
+    };
+    let updatedMission = mission;
+    if (decision.kind === "UPDATE_CONTEXT") {
+      updatedMission = await this.missionService.updateMission(mission.id, {
+        setupAnswers: {
+          ...mission.setupAnswers,
+          ...decision.contextUpdates,
+        },
+      });
+      if (
+        mission.tasks.length > 0 ||
+        mission.researchResults.length > 0 ||
+        mission.recommendations.length > 0 ||
+        mission.costEstimates.length > 0
+      ) {
+        await this.missionService.resetMissionOutputs(mission.id);
+        updatedMission = await this.requireUpdatedMission(mission.id);
+      }
+      if (updatedMission.status === "READY") {
+        updatedMission = await this.missionService.transitionMission(
+          mission.id,
+          "ACTIVE",
+        );
+      }
+    }
+    if (decision.kind !== "RESEARCH") {
+      await this.missionService.addConversationMessage(mission.id, {
+        role: "AGENT",
+        content: decision.reply,
+      });
+    }
+    return {
+      mission: await this.requireUpdatedMission(updatedMission.id),
+      decision,
+    };
+  }
+
+  private async executeConversation(
+    mission: Mission,
+    message: string,
+    messageId?: string,
+    preparedDecision?: ConversationDecision,
+  ): Promise<string> {
+    const decisionResult = preparedDecision
+      ? undefined
+      : await this.conversationAgent.run({
+          mission,
+          objective: "Decide whether to ask for input or research the follow-up.",
+          context: { message, pendingQuestions: [] },
+        });
+    const decision = preparedDecision ?? decisionResult?.data;
+    if (!decision) {
+      await this.missionService.addConversationMessage(mission.id, {
+        role: "AGENT",
+        content: decisionResult?.summary ?? "I couldn't process that follow-up.",
+      });
+      return decisionResult?.summary ?? "I couldn't process that follow-up.";
+    }
+    if (decision.kind === "ASK") {
+      await this.missionService.addConversationMessage(mission.id, {
+        role: "AGENT",
+        content: decision.reply,
+      });
+      return decision.reply;
+    }
+
+    const currentMission = await this.requireUpdatedMission(mission.id);
+    const research = await this.researchAgent.run({
+      mission: currentMission,
+      objective: "Research and verify the user's conversation follow-up.",
+      context: {
+        capability: "knowledge",
+        queries: decision.researchQueries,
+        deepResearch: decision.deepResearch,
+      },
+    });
+    if (research.status !== "COMPLETED" || !research.data) {
+      const reply =
+        `I couldn't verify that follow-up yet. ${research.summary}`.trim();
+      await this.missionService.addConversationMessage(mission.id, {
+        role: "AGENT",
+        content: reply,
+      });
+      return reply;
+    }
+
+    await this.missionService.addResearchResult(mission.id, {
+      providerId: research.data.providerId,
+      capability: "conversation-research",
+      taskKey: `conversation-${messageId ?? Date.now()}`,
+      summary: research.data.summary,
+      confidenceScore: research.data.confidenceScore,
+      data: {
+        ...research.data.data,
+        conversationMessage: message,
+        originalCapability: research.data.capability,
+      },
+      sourceUrls: research.data.sourceUrls,
+      retrievedAt: research.data.retrievedAt,
+    });
+    const reply = conversationReply(research.data);
+    await this.missionService.addConversationMessage(mission.id, {
+      role: "AGENT",
+      content: reply,
+    });
+    await this.missionService.addTimelineEntry(mission.id, {
+      kind: "EVIDENCE_STORED",
+      message: `Conversation follow-up researched through ${research.data.providerId}.`,
+    });
+    return "Conversation follow-up researched and persisted with source evidence.";
   }
 
   private async createWorkflow(mission: Mission): Promise<Mission> {
@@ -373,4 +543,15 @@ function humanize(value: string): string {
     .toLowerCase()
     .replaceAll("_", " ")
     .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function conversationReply(result: ResearchData): string {
+  const sourceCount = result.sourceUrls.length;
+  return [
+    result.summary,
+    sourceCount > 0
+      ? `I verified this against ${sourceCount} source${sourceCount === 1 ? "" : "s"} and stored them with the mission.`
+      : "No source URL was returned, so treat this as incomplete evidence.",
+    `Confidence: ${Math.round(result.confidenceScore * 100)}%.`,
+  ].join(" ");
 }

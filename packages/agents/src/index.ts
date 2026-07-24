@@ -25,4 +25,5 @@ export * from "./research-agent";
 export * from "./recommendation-agent";
 export * from "./cost-analysis-agent";
 export * from "./notification-agent";
+export * from "./conversation-agent";
 export * from "./workflow-definitions";

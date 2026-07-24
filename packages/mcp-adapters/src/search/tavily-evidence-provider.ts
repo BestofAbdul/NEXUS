@@ -21,6 +21,27 @@ const evidenceSearchShape = {
 };
 
 const evidenceSearchSchema = z.object(evidenceSearchShape);
+const extractedItemShape = {
+  url: z.string(),
+  rawContent: z.string(),
+  images: z.array(z.string()),
+};
+const evidenceExtractShape = {
+  source: z.literal("Tavily"),
+  query: z.string(),
+  items: z.array(z.object(extractedItemShape)),
+  failedUrls: z.array(z.string()),
+  extractedAt: z.string(),
+};
+const evidenceExtractSchema = z.object(evidenceExtractShape);
+const evidenceCrawlShape = {
+  source: z.literal("Tavily"),
+  baseUrl: z.string(),
+  instructions: z.string(),
+  items: z.array(z.object(extractedItemShape)),
+  crawledAt: z.string(),
+};
+const evidenceCrawlSchema = z.object(evidenceCrawlShape);
 const tavilyResponseSchema = z.object({
   answer: z.string().nullable().optional(),
   results: z.array(
@@ -32,8 +53,33 @@ const tavilyResponseSchema = z.object({
     }),
   ),
 });
+const tavilyExtractResponseSchema = z.object({
+  results: z.array(
+    z.object({
+      url: z.string(),
+      raw_content: z.string().nullable().optional(),
+      images: z.array(z.string()).optional(),
+    }),
+  ),
+  failed_results: z
+    .array(z.object({ url: z.string() }))
+    .optional()
+    .default([]),
+});
+const tavilyCrawlResponseSchema = z.object({
+  base_url: z.string(),
+  results: z.array(
+    z.object({
+      url: z.string(),
+      raw_content: z.string().nullable().optional(),
+      images: z.array(z.string()).optional(),
+    }),
+  ),
+});
 
 export type EvidenceSearch = z.infer<typeof evidenceSearchSchema>;
+export type EvidenceExtract = z.infer<typeof evidenceExtractSchema>;
+export type EvidenceCrawl = z.infer<typeof evidenceCrawlSchema>;
 
 const searchableCapabilities = [
   "visa",
@@ -78,12 +124,14 @@ export class TavilyEvidenceProvider implements MCPProvider {
     this.apiKey = apiKey;
   }
 
-  async invoke(request: MCPRequest): Promise<MCPResponse<EvidenceSearch>> {
+  async invoke(
+    request: MCPRequest,
+  ): Promise<MCPResponse<EvidenceSearch | EvidenceExtract | EvidenceCrawl>> {
     if (
       !this.capabilities.includes(
         request.capability as (typeof searchableCapabilities)[number],
       ) ||
-      request.operation !== "search"
+      !["search", "extract", "crawl"].includes(request.operation)
     ) {
       return {
         ok: false,
@@ -115,12 +163,30 @@ export class TavilyEvidenceProvider implements MCPProvider {
       await server.connect(serverTransport);
       await client.connect(clientTransport);
       const result = await client.callTool({
-        name: "search_live_evidence",
-        arguments: {
-          capability: request.capability,
-          query: query.trim(),
-          officialOnly: request.input.officialOnly === true,
-        },
+        name:
+          request.operation === "extract"
+            ? "extract_source_evidence"
+            : request.operation === "crawl"
+              ? "crawl_source_evidence"
+              : "search_live_evidence",
+        arguments:
+          request.operation === "extract"
+            ? {
+                urls: request.input.urls,
+                query: query.trim(),
+              }
+            : request.operation === "crawl"
+              ? {
+                  url: request.input.url,
+                  instructions: query.trim(),
+                }
+              : {
+                  capability: request.capability,
+                  query: query.trim(),
+                  officialOnly: request.input.officialOnly === true,
+                  includeDomains: request.input.includeDomains,
+                  excludeDomains: request.input.excludeDomains,
+                },
       });
       if ("toolResult" in result || result.isError || !result.structuredContent) {
         return {
@@ -128,7 +194,12 @@ export class TavilyEvidenceProvider implements MCPProvider {
           error: readToolError(result.content) ?? "Evidence MCP tool failed.",
         };
       }
-      const data = evidenceSearchSchema.parse(result.structuredContent);
+      const data =
+        request.operation === "extract"
+          ? evidenceExtractSchema.parse(result.structuredContent)
+          : request.operation === "crawl"
+            ? evidenceCrawlSchema.parse(result.structuredContent)
+            : evidenceSearchSchema.parse(result.structuredContent);
       return {
         ok: true,
         data,
@@ -136,7 +207,12 @@ export class TavilyEvidenceProvider implements MCPProvider {
           protocol: "MCP",
           transport: "in-memory",
           serverName: client.getServerVersion()?.name,
-          tool: "search_live_evidence",
+          tool:
+            request.operation === "extract"
+              ? "extract_source_evidence"
+              : request.operation === "crawl"
+                ? "crawl_source_evidence"
+                : "search_live_evidence",
         },
       };
     } catch (error) {
@@ -167,6 +243,8 @@ function createServer(apiKey: string): McpServer {
         capability: z.string().min(1),
         query: z.string().min(3),
         officialOnly: z.boolean().default(false),
+        includeDomains: z.array(z.string().min(1)).max(20).default([]),
+        excludeDomains: z.array(z.string().min(1)).max(20).default([]),
       },
       outputSchema: evidenceSearchShape,
       annotations: {
@@ -176,23 +254,41 @@ function createServer(apiKey: string): McpServer {
         openWorldHint: true,
       },
     },
-    async ({ capability, query, officialOnly }) => {
+    async ({
+      capability,
+      query,
+      officialOnly,
+      includeDomains,
+      excludeDomains,
+    }) => {
+      const preferredDomains =
+        includeDomains.length > 0
+          ? includeDomains
+          : officialOnly
+            ? officialDomainHints(query)
+            : [];
+      const excludedDomains = excludeDomains.filter(
+        (domain) => !preferredDomains.includes(domain),
+      );
       const response = await fetch("https://api.tavily.com/search", {
         method: "POST",
         headers: {
           "content-type": "application/json",
           "user-agent": "NEXUS/1.0 evidence MCP provider",
+          authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          api_key: apiKey,
           query,
           search_depth: "advanced",
           max_results: 8,
           include_answer: "advanced",
           include_raw_content: false,
           topic: "general",
-          ...(officialOnly && officialDomainHints(query).length > 0
-            ? { include_domains: officialDomainHints(query) }
+          ...(preferredDomains.length > 0
+            ? { include_domains: preferredDomains }
+            : {}),
+          ...(excludedDomains.length > 0
+            ? { exclude_domains: excludedDomains }
             : {}),
         }),
         signal: AbortSignal.timeout(25_000),
@@ -222,7 +318,131 @@ function createServer(apiKey: string): McpServer {
       };
     },
   );
+  server.registerTool(
+    "extract_source_evidence",
+    {
+      description:
+        "Extract query-relevant chunks from a bounded list of evidence URLs returned by search.",
+      inputSchema: {
+        urls: z.array(z.string().url()).min(1).max(3),
+        query: z.string().min(3),
+      },
+      outputSchema: evidenceExtractShape,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+    },
+    async ({ urls, query }) => {
+      const response = await tavilyFetch(
+        "https://api.tavily.com/extract",
+        apiKey,
+        {
+          urls,
+          query,
+          chunks_per_source: 3,
+          extract_depth: "advanced",
+          format: "markdown",
+          include_images: false,
+        },
+      );
+      const payload = tavilyExtractResponseSchema.parse(response);
+      const data: EvidenceExtract = {
+        source: "Tavily",
+        query,
+        extractedAt: new Date().toISOString(),
+        failedUrls: payload.failed_results.map((item) => item.url),
+        items: payload.results
+          .filter((item) => item.raw_content?.trim())
+          .map((item) => ({
+            url: item.url,
+            rawContent: item.raw_content!.trim(),
+            images: item.images ?? [],
+          })),
+      };
+      return toolResult(data);
+    },
+  );
+  server.registerTool(
+    "crawl_source_evidence",
+    {
+      description:
+        "Crawl a single authoritative site with strict depth and page limits for an explicit deep-research request.",
+      inputSchema: {
+        url: z.string().url(),
+        instructions: z.string().min(3),
+      },
+      outputSchema: evidenceCrawlShape,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+    },
+    async ({ url, instructions }) => {
+      const response = await tavilyFetch(
+        "https://api.tavily.com/crawl",
+        apiKey,
+        {
+          url,
+          instructions,
+          max_depth: 1,
+          max_breadth: 8,
+          limit: 8,
+          extract_depth: "advanced",
+          format: "markdown",
+          include_images: false,
+        },
+      );
+      const payload = tavilyCrawlResponseSchema.parse(response);
+      const data: EvidenceCrawl = {
+        source: "Tavily",
+        baseUrl: payload.base_url,
+        instructions,
+        crawledAt: new Date().toISOString(),
+        items: payload.results
+          .filter((item) => item.raw_content?.trim())
+          .map((item) => ({
+            url: item.url,
+            rawContent: item.raw_content!.trim(),
+            images: item.images ?? [],
+          })),
+      };
+      return toolResult(data);
+    },
+  );
   return server;
+}
+
+async function tavilyFetch(
+  url: string,
+  apiKey: string,
+  body: Record<string, unknown>,
+): Promise<unknown> {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "user-agent": "NEXUS/1.0 evidence MCP provider",
+      authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(35_000),
+  });
+  if (!response.ok) {
+    throw new Error(`Tavily request failed with HTTP ${response.status}.`);
+  }
+  return response.json();
+}
+
+function toolResult(data: Record<string, unknown>) {
+  return {
+    content: [{ type: "text" as const, text: JSON.stringify(data) }],
+    structuredContent: data,
+  };
 }
 
 function officialDomainHints(query: string): string[] {

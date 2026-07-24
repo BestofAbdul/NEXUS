@@ -1,6 +1,7 @@
 import type {
   CostEstimate,
   CreateCostEstimateInput,
+  CreateConversationMessageInput,
   CreateTaskInput,
   CreateTimelineEntryInput,
   CreateRecommendationInput,
@@ -8,6 +9,7 @@ import type {
   CreateMissionInput,
   Mission,
   MissionNotification,
+  MissionConversationMessage,
   MissionResearchResult,
   MissionStatus,
   Recommendation,
@@ -87,6 +89,14 @@ export class MissionService {
   ): Promise<MissionNotification> {
     await this.requireMission(missionId);
     return this.repository.createNotification(missionId, message);
+  }
+
+  async addConversationMessage(
+    missionId: string,
+    input: CreateConversationMessageInput,
+  ): Promise<MissionConversationMessage> {
+    await this.requireMission(missionId);
+    return this.repository.createConversationMessage(missionId, input);
   }
 
   async addTimelineEntry(

@@ -8,6 +8,8 @@ const originalFetch = globalThis.fetch;
 const originalTavilyApiKey = process.env.TAVILY_API_KEY;
 const originalAmadeusClientId = process.env.AMADEUS_CLIENT_ID;
 const originalAmadeusClientSecret = process.env.AMADEUS_CLIENT_SECRET;
+const tavilyOperations: string[] = [];
+const tavilySearchBodies: Array<Record<string, unknown>> = [];
 
 process.env.TAVILY_API_KEY = "test-tavily-key";
 delete process.env.AMADEUS_CLIENT_ID;
@@ -363,6 +365,209 @@ test("treats Amadeus as optional and reports the missing flight capability exact
   assert.ok(body.recommendations.length > 0);
 });
 
+test("resolves free-text China and Benue currencies without an airport provider", async () => {
+  const response = await invoke({
+    goal: "Plan a trip from China to Benue",
+    missionType: "TRAVEL",
+    context: {
+      origin: "china",
+      destination: "benue",
+      departureDate: futureDate(6),
+    },
+  });
+  const body = await response.json();
+  createdMissionIds.add(body.missionId);
+  const currency = body.results.find(
+    (result: any) => result.capability === "currency",
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(currency.data.base, "CNY");
+  assert.equal(currency.data.quote, "NGN");
+  assert.equal(currency.data.originCountry.countryCode, "CN");
+  assert.equal(currency.data.destinationCountry.countryCode, "NG");
+  assert.equal(currency.data.destinationCountry.matchedBy, "LOCATION_GEOCODER");
+  assert.ok(
+    body.tasks.some(
+      (task: any) =>
+        task.capability === "airports" && task.status === "BLOCKED",
+    ),
+  );
+  assert.ok(
+    body.tasks.some(
+      (task: any) =>
+        task.capability === "currency" && task.status === "COMPLETED",
+    ),
+  );
+  assert.ok(body.recommendations.length <= 3);
+  const rawEvidenceExcerpts = body.results.flatMap((result: any) =>
+    Array.isArray(result.data.items)
+      ? result.data.items.map((item: any) => item.excerpt)
+      : [],
+  );
+  assert.ok(
+    body.recommendations.every(
+      (recommendation: any) =>
+        !rawEvidenceExcerpts.includes(recommendation.summary),
+    ),
+  );
+});
+
+test("builds capability-specific Tavily queries and excludes programming domains", async () => {
+  const requestStart = tavilySearchBodies.length;
+  const response = await invoke({
+    goal: "Plan a trip from Lagos to New York",
+    missionType: "TRAVEL",
+    context: {
+      origin: "Lagos",
+      destination: "New York",
+      departureDate: futureDate(8),
+      cabin: "Business",
+      preferences: "Quiet hotels and TypeScript conferences",
+    },
+  });
+  const body = await response.json();
+  createdMissionIds.add(body.missionId);
+  const visaRequest = tavilySearchBodies
+    .slice(requestStart)
+    .find((item) => /^Current visa evidence/i.test(String(item.query)));
+
+  assert.equal(response.status, 200);
+  assert.ok(visaRequest);
+  assert.match(String(visaRequest.query), /origin: Lagos/i);
+  assert.match(String(visaRequest.query), /destination: New York/i);
+  assert.doesNotMatch(String(visaRequest.query), /Business|TypeScript|Quiet/i);
+  assert.ok(
+    Array.isArray(visaRequest.exclude_domains) &&
+      visaRequest.exclude_domains.includes("stackoverflow.com"),
+  );
+});
+
+test("continues a blocked mission from a natural conversation answer", async () => {
+  const createResponse = await invoke({
+    goal: "Plan my trip to the United States",
+    missionType: "TRAVEL",
+  });
+  const created = await createResponse.json();
+  createdMissionIds.add(created.missionId);
+  const missionCount = await prisma.mission.count();
+  const departureDate = futureDate(5);
+
+  const response = await invoke({
+    goal: created.results[0]?.data?.goal ?? "Plan my trip to the United States",
+    missionId: created.missionId,
+    message: `I am travelling from Lagos to New York on ${departureDate}.`,
+  });
+  const body = await response.json();
+  const stored = await prisma.mission.findUniqueOrThrow({
+    where: { id: created.missionId },
+    include: { conversation: { orderBy: { createdAt: "asc" } } },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(body.missionId, created.missionId);
+  assert.equal(await prisma.mission.count(), missionCount);
+  assert.deepEqual(body.pendingQuestions, []);
+  assert.equal(stored.conversation.length, 2);
+  assert.equal(stored.conversation[0].role, "USER");
+  assert.equal(stored.conversation[1].role, "AGENT");
+  assert.match(stored.conversation[1].content, /updated/i);
+  assert.match(stored.setupAnswersJson, /Lagos/);
+  assert.match(stored.setupAnswersJson, /New York/);
+  assert.match(stored.setupAnswersJson, new RegExp(departureDate));
+  assert.ok(body.tasks.length > 0);
+  assert.ok(
+    body.results.some((result: any) => result.capability === "weather"),
+  );
+});
+
+test("deep conversation research persists Tavily search, extract, and crawl evidence", async () => {
+  const createResponse = await invoke({
+    goal: "Find a senior platform engineering role",
+    missionType: "NEW_JOB",
+    context: {
+      targetRole: "Senior Platform Engineer",
+      location: "Remote Europe",
+    },
+  });
+  const created = await createResponse.json();
+  createdMissionIds.add(created.missionId);
+  const missionCount = await prisma.mission.count();
+  const taskCount = await prisma.task.count({
+    where: { missionId: created.missionId },
+  });
+  const resultCount = await prisma.missionResearchResult.count({
+    where: { missionId: created.missionId },
+  });
+  const operationStart = tavilyOperations.length;
+
+  const response = await invoke({
+    goal: "Continue the senior platform engineering mission",
+    missionId: created.missionId,
+    message:
+      "Deeply verify and compare the current hiring evidence using official sources.",
+  });
+  const body = await response.json();
+  const conversationEvidence = body.results.find(
+    (result: any) => result.capability === "conversation-research",
+  );
+  const operations = tavilyOperations.slice(operationStart);
+
+  assert.equal(response.status, 200);
+  assert.equal(body.missionId, created.missionId);
+  assert.equal(await prisma.mission.count(), missionCount);
+  assert.equal(
+    await prisma.task.count({ where: { missionId: created.missionId } }),
+    taskCount,
+  );
+  assert.equal(
+    await prisma.missionResearchResult.count({
+      where: { missionId: created.missionId },
+    }),
+    resultCount + 1,
+  );
+  assert.deepEqual(operations, ["search", "search", "extract", "crawl"]);
+  assert.equal(conversationEvidence.data.verification.searchCount, 2);
+  assert.ok(conversationEvidence.data.extraction.items.length > 0);
+  assert.ok(conversationEvidence.data.crawl.items.length > 0);
+  assert.ok(conversationEvidence.sourceUrls.length >= 2);
+  assert.equal(body.conversation.length, 2);
+  assert.equal(body.conversation[0].role, "USER");
+  assert.equal(body.conversation[1].role, "AGENT");
+  assert.match(body.conversation[1].content, /verified/i);
+});
+
+test("returns clean errors for invalid conversation input", async () => {
+  const withoutMission = await invoke({
+    goal: "Continue",
+    message: "Research this",
+  });
+  const withoutMissionBody = await withoutMission.json();
+  assert.equal(withoutMission.status, 400);
+  assert.equal(
+    withoutMissionBody.error.code,
+    "MESSAGE_REQUIRES_MISSION",
+  );
+
+  const empty = await invoke({
+    goal: "Continue",
+    missionId: "mission-id",
+    message: "   ",
+  });
+  const emptyBody = await empty.json();
+  assert.equal(empty.status, 400);
+  assert.equal(emptyBody.error.code, "INVALID_MESSAGE");
+
+  const oversized = await invoke({
+    goal: "Continue",
+    missionId: "mission-id",
+    message: "x".repeat(4_001),
+  });
+  const oversizedBody = await oversized.json();
+  assert.equal(oversized.status, 400);
+  assert.equal(oversizedBody.error.code, "INVALID_MESSAGE");
+});
+
 function invoke(body: Record<string, unknown>): Promise<Response> {
   return POST(
     new Request("http://localhost/api/a2mcp/mission", {
@@ -394,13 +599,26 @@ async function mockProviderFetch(
   if (url.hostname === "geocoding-api.open-meteo.com") {
     const location = url.searchParams.get("name") ?? "New York";
     const isLagos = /lagos/i.test(location);
+    const isBenue = /benue/i.test(location);
+    const isChina = /china/i.test(location);
     return jsonResponse({
       results: [
         {
-          name: isLagos ? "Lagos" : "New York",
-          country: isLagos ? "Nigeria" : "United States",
-          latitude: isLagos ? 6.5244 : 40.7128,
-          longitude: isLagos ? 3.3792 : -74.006,
+          name: isLagos
+            ? "Lagos"
+            : isBenue
+              ? "Benue"
+              : isChina
+                ? "China"
+                : "New York",
+          country: isLagos || isBenue
+            ? "Nigeria"
+            : isChina
+              ? "China"
+              : "United States",
+          country_code: isLagos || isBenue ? "NG" : isChina ? "CN" : "US",
+          latitude: isLagos || isBenue ? 6.5244 : 40.7128,
+          longitude: isLagos || isBenue ? 3.3792 : -74.006,
         },
       ],
     });
@@ -455,6 +673,32 @@ async function mockProviderFetch(
   if (url.hostname === "api.tavily.com") {
     const requestBody =
       typeof init?.body === "string" ? JSON.parse(init.body) : {};
+    if (url.pathname.endsWith("/extract")) {
+      tavilyOperations.push("extract");
+      return jsonResponse({
+        results: (requestBody.urls ?? []).map((sourceUrl: string) => ({
+          url: sourceUrl,
+          raw_content: `Extracted current evidence for ${requestBody.query}.`,
+          images: [],
+        })),
+        failed_results: [],
+      });
+    }
+    if (url.pathname.endsWith("/crawl")) {
+      tavilyOperations.push("crawl");
+      return jsonResponse({
+        base_url: requestBody.url,
+        results: [
+          {
+            url: `${requestBody.url}/details`,
+            raw_content: `Crawled authoritative details for ${requestBody.instructions}.`,
+            images: [],
+          },
+        ],
+      });
+    }
+    tavilyOperations.push("search");
+    tavilySearchBodies.push(requestBody);
     const query =
       typeof requestBody.query === "string"
         ? requestBody.query
@@ -479,10 +723,63 @@ async function mockProviderFetch(
   }
 
   if (url.hostname === "restcountries.com") {
-    const isNigeria = /Nigeria/i.test(url.pathname);
+    if (/\/name\/benue/i.test(url.pathname)) {
+      return jsonResponse({ status: 404 }, 404);
+    }
+    const isNigeria = /Nigeria|\/alpha\/NG/i.test(url.pathname);
+    const isChina = /China|\/alpha\/CN/i.test(url.pathname);
+    return jsonResponse({
+      name: {
+        common: isNigeria ? "Nigeria" : isChina ? "China" : "United States",
+        official: isNigeria
+          ? "Federal Republic of Nigeria"
+          : isChina
+            ? "People's Republic of China"
+            : "United States of America",
+      },
+      cca2: isNigeria ? "NG" : isChina ? "CN" : "US",
+      currencies: isNigeria
+        ? { NGN: { name: "Naira" } }
+        : isChina
+          ? { CNY: { name: "Renminbi" } }
+          : { USD: { name: "US Dollar" } },
+    });
+  }
+
+  if (
+    url.hostname === "raw.githubusercontent.com" &&
+    /mledoze\/countries/i.test(url.pathname)
+  ) {
     return jsonResponse([
       {
-        currencies: isNigeria ? { NGN: { name: "Naira" } } : { USD: { name: "US Dollar" } },
+        name: {
+          common: "China",
+          official: "People's Republic of China",
+        },
+        cca2: "CN",
+        cca3: "CHN",
+        altSpellings: ["CN", "China"],
+        currencies: { CNY: { name: "Renminbi" } },
+      },
+      {
+        name: {
+          common: "Nigeria",
+          official: "Federal Republic of Nigeria",
+        },
+        cca2: "NG",
+        cca3: "NGA",
+        altSpellings: ["NG", "Nigeria"],
+        currencies: { NGN: { name: "Naira" } },
+      },
+      {
+        name: {
+          common: "United States",
+          official: "United States of America",
+        },
+        cca2: "US",
+        cca3: "USA",
+        altSpellings: ["US", "USA", "United States of America"],
+        currencies: { USD: { name: "United States dollar" } },
       },
     ]);
   }
@@ -498,9 +795,9 @@ async function mockProviderFetch(
   return originalFetch(input, init);
 }
 
-function jsonResponse(value: unknown): Response {
+function jsonResponse(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), {
-    status: 200,
+    status,
     headers: { "content-type": "application/json" },
   });
 }

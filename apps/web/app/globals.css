@@ -639,7 +639,7 @@ textarea:focus-visible {
 
 .execution-overview {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   border-top: 1px solid var(--line);
   border-left: 1px solid var(--line);
 }
@@ -686,6 +686,164 @@ textarea:focus-visible {
   color: #7d4b2b;
   font-size: 13px;
   line-height: 1.5;
+}
+
+.provider-policy-panel {
+  display: grid;
+  grid-template-columns: 190px 1fr;
+  gap: 24px;
+  padding: 22px 28px;
+  border-right: 1px solid #9cb4ad;
+  border-bottom: 1px solid #9cb4ad;
+  border-left: 1px solid #9cb4ad;
+  background: #e7f0ed;
+}
+
+.provider-policy-panel > span {
+  color: var(--moss);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.provider-policy-panel p {
+  margin: 0 0 6px;
+  color: #31584c;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.conversation-panel {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.55fr) minmax(0, 1.1fr);
+  border: 1px solid var(--ink);
+  border-bottom: 0;
+  background: var(--surface);
+}
+
+.conversation-heading {
+  padding: 28px;
+  background: var(--moss);
+  color: var(--surface);
+}
+
+.conversation-heading span {
+  color: #a8c0ad;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.conversation-heading h3 {
+  margin: 18px 0 48px;
+  font-family: "Bahnschrift", "Aptos Display", sans-serif;
+  font-size: clamp(28px, 4vw, 48px);
+  font-weight: 520;
+  line-height: 1;
+  letter-spacing: -0.045em;
+}
+
+.conversation-heading small {
+  color: #c9d7cc;
+}
+
+.conversation-history {
+  display: grid;
+  align-content: start;
+  max-height: 430px;
+  padding: 26px 28px 10px;
+  overflow-y: auto;
+  background: #eef2ec;
+}
+
+.conversation-message {
+  max-width: 86%;
+  margin-bottom: 16px;
+  padding: 16px 18px;
+  border: 1px solid #aeb9b0;
+  background: var(--surface);
+}
+
+.conversation-message.is-user {
+  justify-self: end;
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--surface);
+}
+
+.conversation-message > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 8px;
+}
+
+.conversation-message strong,
+.conversation-message time {
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.conversation-message time {
+  color: var(--muted);
+  font-family: "Cascadia Mono", "Consolas", monospace;
+}
+
+.conversation-message.is-user time {
+  color: #aeb9b0;
+}
+
+.conversation-message p {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.conversation-form {
+  grid-column: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: end;
+  padding: 20px 28px 28px;
+  background: #eef2ec;
+}
+
+.conversation-form label {
+  display: grid;
+  gap: 8px;
+}
+
+.conversation-form label > span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.conversation-form textarea {
+  width: 100%;
+  min-height: 88px;
+  padding: 12px;
+  resize: vertical;
+  border: 1px solid #aeb9b0;
+  background: var(--surface);
+  font: inherit;
+  line-height: 1.5;
+}
+
+.conversation-submit {
+  min-height: 52px;
+  padding: 0 18px;
+  border: 1px solid var(--ink);
+  background: var(--signal);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.conversation-submit:disabled {
+  opacity: 0.55;
 }
 
 .output-panel {
@@ -965,6 +1123,10 @@ textarea:focus-visible {
   .pending-actions-panel {
     grid-template-columns: 1fr;
   }
+
+  .provider-policy-panel {
+    grid-template-columns: 1fr;
+  }
 }
 
 .recommendation-list {
@@ -1053,6 +1215,14 @@ textarea:focus-visible {
   font-family: "Cascadia Mono", "Consolas", monospace;
   font-size: 9px;
   letter-spacing: 0.08em;
+}
+
+.task-row.is-policy-notice p {
+  color: #31584c;
+}
+
+.task-row.is-policy-notice small {
+  color: var(--moss);
 }
 
 .timeline-list {
@@ -1231,6 +1401,14 @@ textarea:focus-visible {
     grid-template-columns: 1fr;
     gap: 6px;
   }
+
+  .conversation-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .conversation-form {
+    grid-column: 1;
+  }
 }
 
 @media (max-width: 600px) {
@@ -1311,6 +1489,14 @@ textarea:focus-visible {
 
   .phase-label {
     grid-column: 1;
+  }
+
+  .conversation-form {
+    grid-template-columns: 1fr;
+  }
+
+  .conversation-message {
+    max-width: 100%;
   }
 }
 

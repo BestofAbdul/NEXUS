@@ -42,6 +42,7 @@ interface A2MCPMissionRequest {
     recommendationId: string;
     query?: string;
   };
+  message?: string;
 }
 ```
 
@@ -65,6 +66,7 @@ interface A2MCPMissionResponse {
   costBreakdown: A2MCPCostBreakdown;
   tasks: A2MCPTask[];
   notifications: A2MCPNotification[];
+  conversation: A2MCPConversationMessage[];
   timeline: A2MCPTimelineEntry[];
   executionSummary: {
     completedTasks: A2MCPExecutionTaskSummary[];
@@ -85,9 +87,20 @@ ordered workflow and schedules durable tasks. Each task moves through
 `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `FAILED`, or `COMPLETED`; progress is
 computed from completed tasks. Travel requests Open-Meteo weather for the
 selected date, uses OpenStreetMap for nearby places and transportation, and uses
-Frankfurter plus location/country resolution for currency evidence. Broad
-research capabilities use Tavily by default and preserve its synthesized answer,
-source excerpts, URLs, and confidence score.
+Frankfurter plus location/country resolution for currency evidence. Currency
+research first resolves each free-text side through the registered `countries`
+capability into ISO country and ISO 4217 currency codes, then calls
+Frankfurter. A genuine lookup miss blocks with the unresolved input named;
+airport evidence is not required. Broad research capabilities use Tavily by
+default and preserve its synthesized answer, source excerpts, URLs, and
+confidence score.
+
+Tavily queries are capability-specific. For example, visa research uses route
+and nationality fields but excludes cabin and preference fields. Non-technical
+mission research excludes general programming/Q&A domains. Item-shaped evidence
+becomes a recommendation only when it overlaps the persisted mission topic;
+recommendations are deduplicated, synthesized rather than copied from excerpts,
+and capped at three.
 
 Amadeus is an optional provider for `airports`, `flights`, and `hotels`; it is
 registered only when both credentials exist. If no flight provider is
@@ -150,6 +163,19 @@ exploration action change, NEXUS reopens a READY mission, clears stale derived
 output, recreates the same workflow, and reruns research for the same
 `missionId`. A plain resume retries blocked tasks and upserts task-owned evidence
 without duplicating the mission, tasks, or results.
+
+`message` is accepted only with an existing `missionId`. NEXUS persists the
+USER message before orchestration and the AGENT response afterward. Clear
+mission facts in a reply, such as `from Lagos to New York on 2026-08-10`, update
+the persisted setup answers and rebuild affected derived output without deleting
+conversation history. Other messages become focused evidence queries. Explicit
+requests to verify, compare, explore, or research deeply can trigger two Tavily
+searches, extraction of up to three returned sources, and a depth-one crawl of
+one top source. Extract or Crawl failures are retained as enrichment warnings
+and do not discard successful Search evidence.
+
+Invalid empty or oversized messages return `INVALID_MESSAGE`. A message without
+`missionId` returns `MESSAGE_REQUIRES_MISSION`.
 
 `READY` is a terminal execution state, not a claim that every optional provider
 was available. The response's `executionSummary` is the canonical compact view

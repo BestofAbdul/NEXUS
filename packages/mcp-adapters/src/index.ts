@@ -24,3 +24,4 @@ export * from "./weather/open-meteo-weather-provider";
 export * from "./flights/amadeus-flight-provider";
 export * from "./search/tavily-evidence-provider";
 export * from "./currency/frankfurter-currency-provider";
+export * from "./countries/rest-countries-provider";

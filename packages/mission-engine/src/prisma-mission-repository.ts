@@ -2,6 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import type {
   CostEstimate,
   CreateCostEstimateInput,
+  CreateConversationMessageInput,
   CreateTaskInput,
   CreateTimelineEntryInput,
   CreateRecommendationInput,
@@ -9,6 +10,7 @@ import type {
   CreateMissionInput,
   Mission,
   MissionNotification,
+  MissionConversationMessage,
   MissionResearchResult,
   MissionStatus,
   Recommendation,
@@ -37,6 +39,11 @@ type PrismaCostEstimate = Awaited<
 type PrismaNotification = Awaited<
   ReturnType<PrismaClient["missionNotification"]["findUniqueOrThrow"]>
 >;
+type PrismaConversationMessage = Awaited<
+  ReturnType<
+    PrismaClient["missionConversationMessage"]["findUniqueOrThrow"]
+  >
+>;
 type PrismaTimelineEntry = Awaited<
   ReturnType<PrismaClient["timelineEntry"]["findUniqueOrThrow"]>
 >;
@@ -47,6 +54,7 @@ const missionIncludes = {
   recommendations: { orderBy: { rank: "asc" as const } },
   costEstimates: { orderBy: { createdAt: "asc" as const } },
   notifications: { orderBy: { createdAt: "asc" as const } },
+  conversation: { orderBy: { createdAt: "asc" as const } },
   timeline: { orderBy: { occurredAt: "asc" as const } },
 };
 
@@ -198,6 +206,17 @@ export class PrismaMissionRepository implements MissionRepository {
     );
   }
 
+  async createConversationMessage(
+    missionId: string,
+    input: CreateConversationMessageInput,
+  ): Promise<MissionConversationMessage> {
+    return toConversationMessage(
+      await this.prisma.missionConversationMessage.create({
+        data: { missionId, ...input },
+      }),
+    );
+  }
+
   async createTimelineEntry(
     missionId: string,
     input: CreateTimelineEntryInput,
@@ -232,6 +251,7 @@ function toMission(
     recommendations: PrismaRecommendation[];
     costEstimates: PrismaCostEstimate[];
     notifications: PrismaNotification[];
+    conversation: PrismaConversationMessage[];
     timeline: PrismaTimelineEntry[];
   },
 ): Mission {
@@ -248,6 +268,7 @@ function toMission(
     recommendations: mission.recommendations.map(toRecommendation),
     costEstimates: mission.costEstimates.map(toCostEstimate),
     notifications: mission.notifications.map(toNotification),
+    conversation: mission.conversation.map(toConversationMessage),
     timeline: mission.timeline.map(toTimelineEntry),
     createdAt: mission.createdAt,
     updatedAt: mission.updatedAt,
@@ -283,6 +304,18 @@ function toNotification(item: PrismaNotification): MissionNotification {
     id: item.id,
     missionId: item.missionId,
     message: item.message,
+    createdAt: item.createdAt,
+  };
+}
+
+function toConversationMessage(
+  item: PrismaConversationMessage,
+): MissionConversationMessage {
+  return {
+    id: item.id,
+    missionId: item.missionId,
+    role: item.role as MissionConversationMessage["role"],
+    content: item.content,
     createdAt: item.createdAt,
   };
 }

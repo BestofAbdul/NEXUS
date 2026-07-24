@@ -53,6 +53,13 @@ async function resumeMission(
     );
   }
 
+  const userMessage = request.message?.trim();
+  const conversationMessage = userMessage
+    ? await missionService.addConversationMessage(existing.id, {
+        role: "USER",
+        content: userMessage,
+      })
+    : undefined;
   const mergedContext = {
     ...existing.setupAnswers,
     ...request.context,
@@ -97,7 +104,12 @@ async function resumeMission(
     mission = await missionService.transitionMission(mission.id, "ACTIVE");
   }
 
-  return toResponse(await missionOrchestrator.run(mission));
+  return toResponse(
+    await missionOrchestrator.run(mission, {
+      conversationMessage: userMessage,
+      conversationMessageId: conversationMessage?.id,
+    }),
+  );
 }
 
 function toResponse(
@@ -158,6 +170,10 @@ function toResponse(
     notifications: mission.notifications.map((notification) => ({
       ...notification,
       createdAt: notification.createdAt.toISOString(),
+    })),
+    conversation: mission.conversation.map((message) => ({
+      ...message,
+      createdAt: message.createdAt.toISOString(),
     })),
     timeline: mission.timeline.map((entry) => ({
       ...entry,

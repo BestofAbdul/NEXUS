@@ -4,7 +4,7 @@ import type {
   WorkflowTaskDefinition,
 } from "@nexus/shared";
 
-interface RequiredInput {
+export interface RequiredInput {
   key: string;
   question: string;
   validate?: (value: string) => boolean;

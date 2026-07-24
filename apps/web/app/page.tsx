@@ -382,6 +382,7 @@ export default function MissionControl() {
     initial.defaults,
   );
   const [mission, setMission] = useState<A2MCPMissionResponse | null>(null);
+  const [conversationDraft, setConversationDraft] = useState("");
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState("");
 
@@ -408,6 +409,7 @@ export default function MissionControl() {
       recommendationId: string;
       query: string;
     },
+    message?: string,
   ) {
     event?.preventDefault();
     setIsRunning(true);
@@ -424,8 +426,9 @@ export default function MissionControl() {
           goal: goal.trim(),
           missionType: selected.type,
           missionId: resume ? mission?.missionId : undefined,
-          context: cleanContext,
+          context: message ? undefined : cleanContext,
           action,
+          message,
         }),
       });
       const body = (await response.json()) as
@@ -440,6 +443,7 @@ export default function MissionControl() {
       }
 
       setMission(body);
+      if (message) setConversationDraft("");
       requestAnimationFrame(() => {
         document
           .getElementById("mission-output")
@@ -617,6 +621,16 @@ export default function MissionControl() {
               query,
             })
           }
+          conversationDraft={conversationDraft}
+          onConversationDraftChange={setConversationDraft}
+          onSendMessage={(event) =>
+            runMission(
+              event,
+              true,
+              undefined,
+              conversationDraft.trim(),
+            )
+          }
         />
       ) : (
         <section className="active-section" aria-labelledby="active-title">
@@ -649,13 +663,28 @@ function MissionOutput({
   isRunning,
   onResume,
   onExplore,
+  conversationDraft,
+  onConversationDraftChange,
+  onSendMessage,
 }: {
   mission: A2MCPMissionResponse;
   isRunning: boolean;
   onResume: () => void;
   onExplore: (recommendationId: string, query: string) => void;
+  conversationDraft: string;
+  onConversationDraftChange: (value: string) => void;
+  onSendMessage: (event: FormEvent) => void;
 }) {
   const labels = dashboardLabels[mission.missionType];
+  const policyNotices = mission.tasks
+    .map((task) => providerPolicyNotice(task.blockedReason))
+    .filter((notice): notice is string => Boolean(notice));
+  const operationalBlockedCount =
+    mission.executionSummary.blockedTasks.length - policyNotices.length;
+  const operationalPendingActions =
+    mission.executionSummary.pendingActions.filter(
+      (action) => !isProviderConfigurationAction(action),
+    );
   return (
     <section
       className="output-section"
@@ -699,8 +728,12 @@ function MissionOutput({
           <strong>{mission.executionSummary.completedTasks.length}</strong>
         </div>
         <div>
+          <span>NOT AVAILABLE</span>
+          <strong>{policyNotices.length}</strong>
+        </div>
+        <div>
           <span>BLOCKED</span>
-          <strong>{mission.executionSummary.blockedTasks.length}</strong>
+          <strong>{Math.max(0, operationalBlockedCount)}</strong>
         </div>
         <div>
           <span>EVIDENCE</span>
@@ -726,16 +759,80 @@ function MissionOutput({
         </div>
       )}
 
-      {mission.executionSummary.pendingActions.length > 0 && (
+      {policyNotices.length > 0 && (
+        <div className="provider-policy-panel">
+          <span>OPTIONAL PROVIDER POLICY</span>
+          <div>
+            {[...new Set(policyNotices)].map((notice) => (
+              <p key={notice}>{notice}</p>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {operationalPendingActions.length > 0 && (
         <div className="pending-actions-panel">
           <span>PENDING ACTIONS TO UNLOCK MORE</span>
           <ul>
-            {mission.executionSummary.pendingActions.map((action) => (
+            {operationalPendingActions.map((action) => (
               <li key={action}>{action}</li>
             ))}
           </ul>
         </div>
       )}
+
+      <section className="conversation-panel" aria-labelledby="conversation-title">
+        <div className="conversation-heading">
+          <div>
+            <span>IN-MISSION CONVERSATION</span>
+            <h3 id="conversation-title">Refine, correct, or explore</h3>
+          </div>
+          <small>{mission.conversation.length} persisted messages</small>
+        </div>
+        <div className="conversation-history" aria-live="polite">
+          {mission.conversation.length === 0 ? (
+            <p className="panel-empty">
+              Ask NEXUS to verify an option, compare evidence, update a mission
+              fact, or explain what remains blocked.
+            </p>
+          ) : (
+            mission.conversation.map((message) => (
+              <article
+                className={`conversation-message is-${message.role.toLowerCase()}`}
+                key={message.id}
+              >
+                <div>
+                  <strong>{message.role === "USER" ? "You" : "NEXUS"}</strong>
+                  <time>{formatTime(message.createdAt)}</time>
+                </div>
+                <p>{message.content}</p>
+              </article>
+            ))
+          )}
+        </div>
+        <form className="conversation-form" onSubmit={onSendMessage}>
+          <label>
+            <span>CONTINUE THIS MISSION</span>
+            <textarea
+              value={conversationDraft}
+              onChange={(event) =>
+                onConversationDraftChange(event.target.value)
+              }
+              placeholder='Try: "Compare the visa options using official sources" or "Destination is Boston."'
+              maxLength={4_000}
+              rows={3}
+              required
+            />
+          </label>
+          <button
+            className="conversation-submit"
+            disabled={isRunning || conversationDraft.trim().length === 0}
+            type="submit"
+          >
+            {isRunning ? "Researching..." : "Send to NEXUS"}
+          </button>
+        </form>
+      </section>
 
       <div className="output-grid">
         <OutputPanel
@@ -787,14 +884,28 @@ function MissionOutput({
         >
           <div className="task-list">
             {mission.tasks.map((task, index) => (
-              <div className="task-row" key={task.id}>
+              <div
+                className={`task-row ${
+                  providerPolicyNotice(task.blockedReason)
+                    ? "is-policy-notice"
+                    : ""
+                }`}
+                key={task.id}
+              >
                 <span>{String(index + 1).padStart(2, "0")}</span>
                 <div>
                   <strong>{task.title}</strong>
                   <small>
-                    {task.capability} / {task.status.replaceAll("_", " ")}
+                    {task.capability} /{" "}
+                    {providerPolicyNotice(task.blockedReason)
+                      ? "NOT AVAILABLE"
+                      : task.status.replaceAll("_", " ")}
                   </small>
-                  {task.blockedReason && <p>{task.blockedReason}</p>}
+                  {providerPolicyNotice(task.blockedReason) ? (
+                    <p>{providerPolicyNotice(task.blockedReason)}</p>
+                  ) : (
+                    task.blockedReason && <p>{task.blockedReason}</p>
+                  )}
                 </div>
               </div>
             ))}
@@ -887,6 +998,23 @@ function OutputPanel({
       {children}
     </article>
   );
+}
+
+function providerPolicyNotice(reason: string | null): string | undefined {
+  if (reason === "No flight provider configured") {
+    return "Not available - NEXUS does not use a paid flight data provider.";
+  }
+  if (reason === "No airport provider configured") {
+    return "Not available - NEXUS does not use a paid airport data provider.";
+  }
+  if (reason === "No hotel provider configured") {
+    return "Not available - NEXUS does not use a paid hotel data provider.";
+  }
+  return undefined;
+}
+
+function isProviderConfigurationAction(action: string): boolean {
+  return /provider with the (flights|airports|hotels) capability/i.test(action);
 }
 
 function ResearchResult({ result }: { result: A2MCPMissionResult }) {

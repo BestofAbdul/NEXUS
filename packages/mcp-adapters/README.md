@@ -19,9 +19,16 @@ Registered providers use the official MCP TypeScript SDK:
   destination.
 - `WikimediaKnowledgeProvider` calls `search_knowledge` with a query assembled
   from each non-Travel mission's goal and submitted setup answers.
-- `FrankfurterCurrencyProvider` returns current exchange-rate evidence and uses
-  REST Countries to resolve route-country currencies.
+- `FrankfurterCurrencyProvider` returns current exchange-rate evidence using
+  only verified ISO 4217 base/quote codes.
+- `RestCountriesProvider` resolves free-text countries directly and falls back
+  to location geocoding for cities/states before returning ISO country and
+  currency codes. It never guesses on a failed lookup.
 - `TavilyEvidenceProvider` is the default research provider for immigration,
   jobs, housing, healthcare, education, government guidance, relocation,
   events, medical travel, transportation, and freight. It stores Tavily's
   synthesized answer, source excerpts, URLs, and relevance-derived confidence.
+  It also exposes bounded Extract and Crawl MCP tools. Extract accepts at most
+  three URLs and three chunks per source; Crawl is depth one and limited to
+  eight pages for explicit deep-research requests. Search accepts
+  capability-specific include/exclude domain filters.

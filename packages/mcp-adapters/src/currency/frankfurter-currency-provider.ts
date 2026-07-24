@@ -2,7 +2,6 @@ import type { MCPProvider, MCPRequest, MCPResponse } from "../index";
 
 export interface CurrencyEvidence {
   source: "Frankfurter";
-  countrySource: "REST Countries";
   base: string;
   quote: string;
   rate: number;
@@ -21,16 +20,13 @@ export class FrankfurterCurrencyProvider implements MCPProvider {
         error: `Unsupported currency request: ${request.capability}/${request.operation}`,
       };
     }
-    const base =
-      normalizeCode(request.input.base) ??
-      (await resolveCountryCurrency(request.input.baseCountry));
-    const quote =
-      normalizeCode(request.input.quote) ??
-      (await resolveCountryCurrency(request.input.quoteCountry));
+    const base = normalizeCode(request.input.base);
+    const quote = normalizeCode(request.input.quote);
     if (!base || !quote) {
       return {
         ok: false,
-        error: "Currency research requires three-letter base and quote codes.",
+        error:
+          "Frankfurter requires verified three-letter base and quote currency codes.",
       };
     }
 
@@ -59,7 +55,6 @@ export class FrankfurterCurrencyProvider implements MCPProvider {
       ok: true,
       data: {
         source: "Frankfurter",
-        countrySource: "REST Countries",
         base,
         quote,
         rate,
@@ -69,58 +64,6 @@ export class FrankfurterCurrencyProvider implements MCPProvider {
       metadata: { protocol: "HTTPS", operation: "latest-rate" },
     };
   }
-}
-
-async function resolveCountryCurrency(
-  location: unknown,
-): Promise<string | undefined> {
-  if (typeof location !== "string" || location.trim().length === 0) {
-    return undefined;
-  }
-  const value = location.trim();
-  const directCurrency = await fetchCountryCurrency(value);
-  if (directCurrency) return directCurrency;
-  const country = await resolveLocationCountry(value);
-  return country ? fetchCountryCurrency(country) : undefined;
-}
-
-async function fetchCountryCurrency(
-  country: string,
-): Promise<string | undefined> {
-  const url = new URL(
-    `https://restcountries.com/v3.1/name/${encodeURIComponent(country)}`,
-  );
-  url.searchParams.set("fullText", "true");
-  url.searchParams.set("fields", "currencies");
-  const response = await fetch(url, {
-    headers: { "user-agent": "NEXUS/1.0 country metadata provider" },
-    signal: AbortSignal.timeout(12_000),
-  });
-  if (!response.ok) return undefined;
-  const payload = (await response.json()) as Array<{
-    currencies?: Record<string, unknown>;
-  }>;
-  return Object.keys(payload[0]?.currencies ?? {})[0];
-}
-
-async function resolveLocationCountry(
-  location: string,
-): Promise<string | undefined> {
-  const url = new URL("https://geocoding-api.open-meteo.com/v1/search");
-  url.searchParams.set("name", location);
-  url.searchParams.set("count", "1");
-  url.searchParams.set("language", "en");
-  url.searchParams.set("format", "json");
-  const response = await fetch(url, {
-    headers: { "user-agent": "NEXUS/1.0 currency location resolver" },
-    signal: AbortSignal.timeout(12_000),
-  });
-  if (!response.ok) return undefined;
-  const payload = (await response.json()) as {
-    results?: Array<{ country?: unknown }>;
-  };
-  const country = payload.results?.[0]?.country;
-  return typeof country === "string" ? country : undefined;
 }
 
 function normalizeCode(value: unknown): string | undefined {

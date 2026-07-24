@@ -1,6 +1,7 @@
 import type {
   CostEstimate,
   CreateCostEstimateInput,
+  CreateConversationMessageInput,
   CreateTaskInput,
   CreateTimelineEntryInput,
   CreateRecommendationInput,
@@ -8,6 +9,7 @@ import type {
   CreateMissionInput,
   Mission,
   MissionNotification,
+  MissionConversationMessage,
   MissionResearchResult,
   MissionStatus,
   Recommendation,
@@ -43,6 +45,10 @@ export interface MissionRepository {
     missionId: string,
     message: string,
   ): Promise<MissionNotification>;
+  createConversationMessage(
+    missionId: string,
+    input: CreateConversationMessageInput,
+  ): Promise<MissionConversationMessage>;
   createTimelineEntry(
     missionId: string,
     input: CreateTimelineEntryInput,
