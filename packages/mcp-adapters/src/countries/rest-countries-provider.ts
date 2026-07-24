@@ -147,13 +147,37 @@ async function fetchRestCountries(url: URL): Promise<RestCountry[]> {
     if (response.status === 404) return [];
     if (!response.ok) return [];
     const payload = (await response.json()) as unknown;
-    if (Array.isArray(payload)) return payload as RestCountry[];
-    return payload && typeof payload === "object"
-      ? [payload as RestCountry]
-      : [];
+    return parseCountryPayload(payload);
   } catch {
     return [];
   }
+}
+
+function parseCountryPayload(payload: unknown): RestCountry[] {
+  const candidates = Array.isArray(payload)
+    ? payload
+    : isRecord(payload) && Array.isArray(payload.data)
+      ? payload.data
+      : isRecord(payload) && isRecord(payload.data)
+        ? [payload.data]
+        : [payload];
+
+  return candidates.filter(isCompleteCountry);
+}
+
+function isCompleteCountry(value: unknown): value is RestCountry {
+  if (!isRecord(value)) return false;
+  const name = isRecord(value.name) ? value.name : undefined;
+  return (
+    typeof name?.common === "string" &&
+    typeof value.cca2 === "string" &&
+    isRecord(value.currencies) &&
+    Object.keys(value.currencies).length > 0
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 async function loadCountries(): Promise<RestCountry[]> {

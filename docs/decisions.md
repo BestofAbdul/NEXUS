@@ -589,6 +589,12 @@ dataset. The Currency research task resolves both sides before calling
 Frankfurter, so it no longer depends on an airport provider. Failed name
 resolution blocks with the unresolved input rather than guessing a code.
 
+**Production compatibility:** The deprecated v3.1 endpoint can return an HTTP
+200 error envelope instead of a country record. The provider validates the
+country name, ISO code, and currency fields before accepting any response;
+deprecation or error envelopes fall through to the open dataset. This behavior
+is covered by the China-to-Benue route regression test.
+
 **Evidence query scope:** Replace the all-setup-fields query dump with
 capability-specific field templates. Regulated and route research receives only
 relevant facts. Tavily Search now forwards bounded `include_domains` and

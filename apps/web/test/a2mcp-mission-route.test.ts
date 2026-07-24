@@ -387,6 +387,14 @@ test("resolves free-text China and Benue currencies without an airport provider"
   assert.equal(currency.data.originCountry.countryCode, "CN");
   assert.equal(currency.data.destinationCountry.countryCode, "NG");
   assert.equal(currency.data.destinationCountry.matchedBy, "LOCATION_GEOCODER");
+  assert.match(
+    currency.data.originCountry.sourceUrl,
+    /raw\.githubusercontent\.com\/mledoze\/countries/i,
+  );
+  assert.match(
+    currency.data.destinationCountry.sourceUrl,
+    /raw\.githubusercontent\.com\/mledoze\/countries/i,
+  );
   assert.ok(
     body.tasks.some(
       (task: any) =>
@@ -726,23 +734,15 @@ async function mockProviderFetch(
     if (/\/name\/benue/i.test(url.pathname)) {
       return jsonResponse({ status: 404 }, 404);
     }
-    const isNigeria = /Nigeria|\/alpha\/NG/i.test(url.pathname);
-    const isChina = /China|\/alpha\/CN/i.test(url.pathname);
     return jsonResponse({
-      name: {
-        common: isNigeria ? "Nigeria" : isChina ? "China" : "United States",
-        official: isNigeria
-          ? "Federal Republic of Nigeria"
-          : isChina
-            ? "People's Republic of China"
-            : "United States of America",
-      },
-      cca2: isNigeria ? "NG" : isChina ? "CN" : "US",
-      currencies: isNigeria
-        ? { NGN: { name: "Naira" } }
-        : isChina
-          ? { CNY: { name: "Renminbi" } }
-          : { USD: { name: "US Dollar" } },
+      success: false,
+      data: null,
+      errors: [
+        {
+          message:
+            "This API version has been deprecated. Please migrate to the current API.",
+        },
+      ],
     });
   }
 
